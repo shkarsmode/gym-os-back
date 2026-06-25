@@ -1,5 +1,6 @@
 {
     "version": 2,
+    "buildCommand": "node ./scripts/vercel-build.mjs",
     "builds": [
         {
             "src": "src/vercel.ts",
