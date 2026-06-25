@@ -78,6 +78,8 @@ JWT_SECRET="replace-with-a-long-random-secret"
 FRONTEND_URL="http://localhost:8080"
 ADMIN_EMAILS="you@example.com"
 ALLOW_FILE_ORIGIN="false"
+GYMOS_AUTO_DB_PUSH="false"
+GYMOS_AUTO_IMPORT_EXRX="false"
 NODE_ENV="development"
 ```
 
@@ -162,6 +164,17 @@ Backend містить:
 Деплой виконуй із `D:\Features\gymos\gym-os-back`; усі env variables потрібно додати у Vercel.
 
 Для PostgreSQL на Vercel використовуй pooled connection string із Neon, Supabase, Vercel Postgres або іншого managed PostgreSQL provider. Для довготривалого NestJS API часто простіше мати persistent Node host, але цей backend має Vercel-compatible serverless entrypoint для production demo і помірного трафіку.
+
+### Одноразова ініціалізація production DB на Vercel
+
+Якщо `DATABASE_URL` у Vercel позначений як sensitive і `vercel env pull` не віддає plaintext URL локально, можна ініціалізувати demo DB під час Vercel build:
+
+```env
+GYMOS_AUTO_DB_PUSH="true"
+GYMOS_AUTO_IMPORT_EXRX="true"
+```
+
+`GYMOS_AUTO_DB_PUSH` запускає `prisma db push --skip-generate` після `prisma generate`. `GYMOS_AUTO_IMPORT_EXRX` імпортує тільки ExRx reference-only каталог і пропускає дублікати за `originalName`, `sourceUrl` і `slug`; він не очищує workouts/users. Після першого успішного деплою ці прапорці краще повернути у `"false"` і далі керувати схемою через migrations.
 
 Якщо Vercel build падає на `node_modules/.bin/prisma: Permission denied`, переконайся, що задеплоєна версія має scripts із прямим Node entrypoint:
 
