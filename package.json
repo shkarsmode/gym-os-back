@@ -5,7 +5,7 @@
     "description": "GymOS NestJS API",
     "scripts": {
         "build": "nest build",
-        "postinstall": "prisma generate",
+        "postinstall": "node ./node_modules/prisma/build/index.js generate",
         "start": "node dist/main.js",
         "start:dev": "nest start --watch",
         "start:prod": "node dist/main.js",
