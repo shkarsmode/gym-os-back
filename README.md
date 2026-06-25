@@ -1,19 +1,17 @@
 # GymOS API
 
-NestJS backend for GymOS, prepared for PostgreSQL, Prisma, Google OAuth and Vercel-compatible deployment.
+NestJS backend для GymOS: PostgreSQL, Prisma, Google OAuth і Vercel-compatible deployment.
 
-## Workspaces
+## Workspace
 
 - Frontend: `D:\Features\gymos\gym-os-front`
 - Backend: `D:\Features\gymos\gym-os-back`
 
-## Frontend Local Run
+## Локальний запуск frontend
 
-Open `D:\Features\gymos\gym-os-front\index.html` directly in a browser.
+Відкрий `D:\Features\gymos\gym-os-front\index.html` напряму в браузері.
 
-The frontend starts in local demo mode by default. In `Налаштування`, switch `Режим даних` to `Backend API` after the API is running.
-
-Default frontend API config:
+Frontend за замовчуванням стартує в локальному деморежимі. Після запуску API у `Налаштуваннях` можна перемкнути `Режим даних` на `Бекенд API`.
 
 ```js
 window.FORGE_CONFIG = {
@@ -24,7 +22,7 @@ window.FORGE_CONFIG = {
 };
 ```
 
-## Backend Local Run
+## Локальний запуск backend
 
 ```powershell
 cd D:\Features\gymos\gym-os-back
@@ -40,31 +38,31 @@ Health check:
 Invoke-RestMethod http://localhost:3000/health
 ```
 
-## PostgreSQL And Prisma
+## PostgreSQL і Prisma
 
-Create a local PostgreSQL database and set `DATABASE_URL` in `.env`:
+Створи локальну PostgreSQL базу і заповни `DATABASE_URL` у `.env`:
 
 ```env
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/gymos?schema=public"
 ```
 
-Run migrations and seed:
+Міграції та seed:
 
 ```powershell
 npm run prisma:migrate
 npm run seed
 ```
 
-The seed creates 3 demo users, exercise catalog, workout templates, completed/planned/active workouts, cardio, PR, achievements and demo strength standards.
+Seed створює 3 demo users, каталог вправ, шаблони, completed/planned/active тренування, cardio, PR, achievements і demo strength standards.
 
 ## Google OAuth
 
-Create OAuth credentials in Google Cloud Console:
+Створи OAuth credentials у Google Cloud Console:
 
 - Authorized redirect URI: `http://localhost:3000/auth/google/callback`
 - Production redirect URI: `https://your-api-domain.vercel.app/auth/google/callback`
 
-Required env variables:
+Потрібні env variables:
 
 ```env
 GOOGLE_CLIENT_ID=""
@@ -75,16 +73,9 @@ FRONTEND_URL="http://localhost:8080"
 NODE_ENV="development"
 ```
 
-Auth endpoints:
+Auth зберігає JWT session у HTTP-only cookie `gymos_session`.
 
-- `GET /auth/google`
-- `GET /auth/google/callback`
-- `GET /auth/me`
-- `POST /auth/logout`
-
-The API stores a `gymos_session` HTTP-only cookie with a JWT session.
-
-## REST API Surface
+## REST API
 
 Auth:
 
@@ -93,7 +84,7 @@ Auth:
 - `POST /auth/logout`
 - `GET /auth/me`
 
-Users and profile:
+Users і profile:
 
 - `GET /users`
 - `GET /users/:id`
@@ -132,7 +123,7 @@ Workouts:
 - `PATCH /workouts/:id/cardio/:cardioId`
 - `DELETE /workouts/:id/cardio/:cardioId`
 
-Templates, stats and data:
+Templates, stats і data:
 
 - `GET /workout-templates`
 - `POST /workout-templates/:id/create-workout`
@@ -144,18 +135,18 @@ Templates, stats and data:
 - `GET /export`
 - `POST /import`
 
-## Vercel Deploy
+## Vercel deploy
 
-The backend includes:
+Backend містить:
 
 - `src/vercel.ts` serverless NestJS entrypoint
 - `vercel.json`
 
-Deploy from `D:\Features\gymos\gym-os-back` and configure all env variables in Vercel.
+Деплой виконуй із `D:\Features\gymos\gym-os-back`; усі env variables потрібно додати у Vercel.
 
-For PostgreSQL on Vercel, use a pooled connection string from Neon, Supabase, Vercel Postgres or another managed PostgreSQL provider. Long-running NestJS APIs can be simpler on a persistent Node host, but this project includes a Vercel-compatible serverless entrypoint for production demos and moderate traffic.
+Для PostgreSQL на Vercel використовуй pooled connection string із Neon, Supabase, Vercel Postgres або іншого managed PostgreSQL provider. Для довготривалого NestJS API часто простіше мати persistent Node host, але цей backend має Vercel-compatible serverless entrypoint для production demo і помірного трафіку.
 
-## Quality Commands
+## Quality commands
 
 ```powershell
 npm run prisma:validate
@@ -163,9 +154,10 @@ npm run prisma:generate
 npm run build
 ```
 
-Manual secrets still required:
+Секрети, які треба додати вручну:
 
 - `DATABASE_URL`
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `JWT_SECRET`
+- `FRONTEND_URL`
