@@ -1,4 +1,7 @@
 import { PrismaClient, WorkoutSetType, WorkoutStatus } from "@prisma/client";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { normalizeExerciseCatalogPayload } from "../src/modules/import-export/exercise-catalog-importer";
 
 const prisma = new PrismaClient();
 
@@ -38,6 +41,7 @@ async function main() {
     await clearData();
     await seedUsers();
     await seedExercises();
+    await seedImportedExercises();
     await seedTemplates();
     await seedWorkouts();
     await seedStandards();
@@ -115,6 +119,15 @@ async function seedExercises() {
             }
         });
     }
+}
+
+async function seedImportedExercises() {
+    const payload = JSON.parse(readFileSync(join(__dirname, "data", "exrx-exercises.json"), "utf8"));
+    const result = normalizeExerciseCatalogPayload(payload);
+    for (const exercise of result.exercises) {
+        await prisma.exercise.create({ data: exercise as any });
+    }
+    console.log(`Seeded ${result.exercises.length} ExRx reference exercises, skipped ${result.skipped}.`);
 }
 
 async function seedTemplates() {

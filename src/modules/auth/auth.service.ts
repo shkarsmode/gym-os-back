@@ -75,11 +75,12 @@ export class AuthService {
             email: user.email,
             displayName: user.displayName
         });
+        const isProduction = process.env.NODE_ENV === "production";
 
         response.cookie("gymos_session", token, {
             httpOnly: true,
-            sameSite: "lax",
-            secure: process.env.NODE_ENV === "production",
+            sameSite: isProduction ? "none" : "lax",
+            secure: isProduction,
             maxAge: 14 * 24 * 60 * 60 * 1000
         });
     }
