@@ -24,6 +24,12 @@ export declare class WorkoutTemplatesService {
                 mediaType: string;
                 isCustom: boolean;
                 slug: string;
+                sourceName: string | null;
+                sourceUrl: string | null;
+                originalName: string | null;
+                licenseStatus: string | null;
+                mediaReferences: import("@prisma/client/runtime/library").JsonValue;
+                sourceImportedAt: Date | null;
                 createdByUserId: string | null;
             };
         } & {
@@ -68,6 +74,12 @@ export declare class WorkoutTemplatesService {
                 mediaType: string;
                 isCustom: boolean;
                 slug: string;
+                sourceName: string | null;
+                sourceUrl: string | null;
+                originalName: string | null;
+                licenseStatus: string | null;
+                mediaReferences: import("@prisma/client/runtime/library").JsonValue;
+                sourceImportedAt: Date | null;
                 createdByUserId: string | null;
             };
             sets: {

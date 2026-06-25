@@ -16,6 +16,8 @@ let HealthController = class HealthController {
         return {
             ok: true,
             service: "GymOS API",
+            databaseConfigured: Boolean(process.env.DATABASE_URL),
+            googleOAuthConfigured: Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
             timestamp: new Date().toISOString()
         };
     }

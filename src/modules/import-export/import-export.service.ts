@@ -231,7 +231,7 @@ export class ImportExportService {
         const result = normalizeExerciseCatalogPayload(payload, existingKeys);
 
         for (const exercise of result.exercises) {
-            await this.prisma.exercise.create({ data: exercise });
+            await this.prisma.exercise.create({ data: exercise as any });
         }
 
         return {

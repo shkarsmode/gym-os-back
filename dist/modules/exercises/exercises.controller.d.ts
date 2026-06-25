@@ -24,6 +24,12 @@ export declare class ExercisesController {
         mediaType: string;
         isCustom: boolean;
         slug: string;
+        sourceName: string | null;
+        sourceUrl: string | null;
+        originalName: string | null;
+        licenseStatus: string | null;
+        mediaReferences: import("@prisma/client/runtime/library").JsonValue;
+        sourceImportedAt: Date | null;
         createdByUserId: string | null;
     }[]>;
     findOne(id: string): Promise<{
@@ -46,6 +52,12 @@ export declare class ExercisesController {
         mediaType: string;
         isCustom: boolean;
         slug: string;
+        sourceName: string | null;
+        sourceUrl: string | null;
+        originalName: string | null;
+        licenseStatus: string | null;
+        mediaReferences: import("@prisma/client/runtime/library").JsonValue;
+        sourceImportedAt: Date | null;
         createdByUserId: string | null;
     }>;
     create(user: RequestUser, dto: CreateExerciseDto): import(".prisma/client").Prisma.Prisma__ExerciseClient<{
@@ -68,6 +80,12 @@ export declare class ExercisesController {
         mediaType: string;
         isCustom: boolean;
         slug: string;
+        sourceName: string | null;
+        sourceUrl: string | null;
+        originalName: string | null;
+        licenseStatus: string | null;
+        mediaReferences: import("@prisma/client/runtime/library").JsonValue;
+        sourceImportedAt: Date | null;
         createdByUserId: string | null;
     }, never, import("@prisma/client/runtime/library").DefaultArgs>;
     update(user: RequestUser, id: string, dto: UpdateExerciseDto): Promise<{
@@ -90,6 +108,12 @@ export declare class ExercisesController {
         mediaType: string;
         isCustom: boolean;
         slug: string;
+        sourceName: string | null;
+        sourceUrl: string | null;
+        originalName: string | null;
+        licenseStatus: string | null;
+        mediaReferences: import("@prisma/client/runtime/library").JsonValue;
+        sourceImportedAt: Date | null;
         createdByUserId: string | null;
     }>;
     remove(user: RequestUser, id: string): Promise<{

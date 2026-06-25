@@ -1,48 +1,29 @@
 import { PrismaService } from "../../prisma/prisma.service";
+import { RequestUser } from "../../shared/current-user.decorator";
 export declare class ImportExportService {
     private readonly prisma;
     constructor(prisma: PrismaService);
-    export(): Promise<{
+    export(user: RequestUser): Promise<{
         version: number;
-        users: ({
-            oauthAccounts: {
-                id: string;
-                userId: string;
-                provider: string;
-                providerAccountId: string;
-                accessToken: string | null;
-                refreshToken: string | null;
-                expiresAt: Date | null;
-                createdAt: Date;
-                updatedAt: Date;
-            }[];
-            profile: {
-                id: string;
-                userId: string;
-                createdAt: Date;
-                updatedAt: Date;
-                name: string;
-                displayName: string;
-                height: number | null;
-                bodyweight: import("@prisma/client/runtime/library").Decimal | null;
-                gender: string;
-                trainingGoal: string | null;
-                trainingExperience: string | null;
-                favoriteMuscleGroup: string | null;
-            } | null;
-        } & {
+        currentUserId: string;
+        users: {
             id: string;
-            createdAt: Date;
-            updatedAt: Date;
-            email: string;
-            googleId: string | null;
+            name: string;
             displayName: string;
-            avatarUrl: string | null;
-        })[];
+            avatarInitials: string;
+            avatarColor: string;
+            height: number;
+            bodyweight: number;
+            birthYear: number;
+            gender: string;
+            trainingGoal: string;
+            trainingExperience: string;
+            favoriteMuscleGroup: string;
+            createdAt: string;
+            updatedAt: string;
+        }[];
         exercises: {
             id: string;
-            createdAt: Date;
-            updatedAt: Date;
             name: string;
             aliases: import("@prisma/client/runtime/library").JsonValue;
             primaryMuscleGroup: string;
@@ -51,128 +32,95 @@ export declare class ImportExportService {
             equipment: string;
             category: string;
             difficulty: string;
-            description: string | null;
+            description: string;
             techniqueSteps: import("@prisma/client/runtime/library").JsonValue;
             commonMistakes: import("@prisma/client/runtime/library").JsonValue;
             safetyTips: import("@prisma/client/runtime/library").JsonValue;
-            mediaUrl: string | null;
+            mediaUrl: string;
             mediaType: string;
+            sourceName: string | null;
+            sourceUrl: string | null;
+            originalName: string | null;
+            licenseStatus: string | null;
+            mediaReferences: import("@prisma/client/runtime/library").JsonValue;
             isCustom: boolean;
-            slug: string;
             createdByUserId: string | null;
+            createdAt: string;
+            updatedAt: string;
         }[];
         bodyweightEntries: {
             id: string;
             userId: string;
-            createdAt: Date;
-            bodyweight: import("@prisma/client/runtime/library").Decimal;
-            date: Date;
-            notes: string | null;
+            date: string;
+            bodyweight: number;
+            notes: string;
         }[];
-        workouts: ({
-            exercises: ({
-                sets: {
-                    id: string;
-                    createdAt: Date;
-                    updatedAt: Date;
-                    notes: string | null;
-                    type: import(".prisma/client").$Enums.WorkoutSetType;
-                    weight: import("@prisma/client/runtime/library").Decimal;
-                    repetitions: number;
-                    rpe: import("@prisma/client/runtime/library").Decimal | null;
-                    restSeconds: number;
-                    isCompleted: boolean;
-                    workoutExerciseId: string;
-                }[];
-            } & {
-                id: string;
-                createdAt: Date;
-                updatedAt: Date;
-                notes: string | null;
-                exerciseId: string;
-                order: number;
-                workoutId: string;
-            })[];
-            cardioSessions: {
-                id: string;
-                createdAt: Date;
-                updatedAt: Date;
-                notes: string | null;
-                type: string;
-                durationMinutes: number;
-                distance: import("@prisma/client/runtime/library").Decimal | null;
-                calories: number | null;
-                averageHeartRate: number | null;
-                intensity: string | null;
-                workoutId: string;
-            }[];
-        } & {
+        workouts: {
             id: string;
             userId: string;
-            createdAt: Date;
-            updatedAt: Date;
-            date: Date;
-            notes: string | null;
+            date: string;
             title: string;
             status: import(".prisma/client").$Enums.WorkoutStatus;
             workoutType: string;
-            startedAt: Date | null;
-            finishedAt: Date | null;
-        })[];
-        strengthStandards: {
-            id: string;
-            updatedAt: Date;
-            gender: string;
-            exerciseId: string;
-            repetitions: number;
-            bodyweightMin: import("@prisma/client/runtime/library").Decimal;
-            bodyweightMax: import("@prisma/client/runtime/library").Decimal;
-            level: string;
-            requiredWeight: import("@prisma/client/runtime/library").Decimal;
-            sourceName: string;
-            sourceNote: string | null;
-            isOfficial: boolean;
-        }[];
-        workoutTemplates: ({
+            startedAt: string | null;
+            finishedAt: string | null;
+            notes: string;
             exercises: {
                 id: string;
-                notes: string | null;
                 exerciseId: string;
                 order: number;
-                restSeconds: number | null;
-                workoutTemplateId: string;
-                targetSets: number | null;
-                targetReps: number | null;
+                notes: string;
+                sets: {
+                    id: string;
+                    type: import(".prisma/client").$Enums.WorkoutSetType;
+                    weight: number;
+                    repetitions: number;
+                    rpe: number;
+                    restSeconds: number;
+                    isCompleted: boolean;
+                    notes: string;
+                }[];
             }[];
-        } & {
+            cardioSessions: {
+                id: string;
+                type: string;
+                durationMinutes: number;
+                distance: number;
+                calories: number;
+                averageHeartRate: number;
+                intensity: string;
+                notes: string;
+            }[];
+        }[];
+        strengthStandards: {
             id: string;
-            userId: string | null;
-            createdAt: Date;
-            updatedAt: Date;
-            title: string;
-            description: string | null;
-            type: string;
-            isPublic: boolean;
-        })[];
-        achievements: {
-            id: string;
-            createdAt: Date;
-            title: string;
-            category: string;
-            description: string;
-            key: string;
-            target: number;
-            metric: string;
+            exerciseId: string;
+            gender: string;
+            bodyweightMin: number;
+            bodyweightMax: number;
+            level: string;
+            requiredWeight: number;
+            repetitions: number;
+            sourceName: string;
+            sourceNote: string;
+            isOfficial: boolean;
+            updatedAt: string;
         }[];
         exportedAt: string;
     }>;
-    import(payload: any): Promise<{
+    import(user: RequestUser, payload: any): Promise<{
         ok: boolean;
-        received: {
-            users: any;
-            exercises: any;
+        imported: {
             workouts: any;
+            bodyweightEntries: any;
+            customExercises: any;
         };
-        note: string;
     }>;
+    importExercises(user: RequestUser, payload: unknown): Promise<{
+        ok: boolean;
+        imported: number;
+        skipped: number;
+        source: string;
+    }>;
+    private assertExerciseImportPermission;
 }

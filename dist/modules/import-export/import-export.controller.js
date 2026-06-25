@@ -15,32 +15,46 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ImportExportController = void 0;
 const common_1 = require("@nestjs/common");
 const jwt_auth_guard_1 = require("../../shared/jwt-auth.guard");
+const current_user_decorator_1 = require("../../shared/current-user.decorator");
 const import_export_service_1 = require("./import-export.service");
 let ImportExportController = class ImportExportController {
     constructor(importExportService) {
         this.importExportService = importExportService;
     }
-    export() {
-        return this.importExportService.export();
+    export(user) {
+        return this.importExportService.export(user);
     }
-    import(payload) {
-        return this.importExportService.import(payload);
+    import(user, payload) {
+        return this.importExportService.import(user, payload);
+    }
+    importExercises(user, payload) {
+        return this.importExportService.importExercises(user, payload);
     }
 };
 exports.ImportExportController = ImportExportController;
 __decorate([
     (0, common_1.Get)("export"),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", []),
+    __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], ImportExportController.prototype, "export", null);
 __decorate([
     (0, common_1.Post)("import"),
-    __param(0, (0, common_1.Body)()),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], ImportExportController.prototype, "import", null);
+__decorate([
+    (0, common_1.Post)("import/exercises"),
+    __param(0, (0, current_user_decorator_1.CurrentUser)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], ImportExportController.prototype, "importExercises", null);
 exports.ImportExportController = ImportExportController = __decorate([
     (0, common_1.Controller)(),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

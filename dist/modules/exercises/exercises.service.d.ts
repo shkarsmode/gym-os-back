@@ -23,6 +23,12 @@ export declare class ExercisesService {
         mediaType: string;
         isCustom: boolean;
         slug: string;
+        sourceName: string | null;
+        sourceUrl: string | null;
+        originalName: string | null;
+        licenseStatus: string | null;
+        mediaReferences: import("@prisma/client/runtime/library").JsonValue;
+        sourceImportedAt: Date | null;
         createdByUserId: string | null;
     }[]>;
     findOne(id: string): Promise<{
@@ -45,6 +51,12 @@ export declare class ExercisesService {
         mediaType: string;
         isCustom: boolean;
         slug: string;
+        sourceName: string | null;
+        sourceUrl: string | null;
+        originalName: string | null;
+        licenseStatus: string | null;
+        mediaReferences: import("@prisma/client/runtime/library").JsonValue;
+        sourceImportedAt: Date | null;
         createdByUserId: string | null;
     }>;
     create(userId: string, dto: CreateExerciseDto): import(".prisma/client").Prisma.Prisma__ExerciseClient<{
@@ -67,6 +79,12 @@ export declare class ExercisesService {
         mediaType: string;
         isCustom: boolean;
         slug: string;
+        sourceName: string | null;
+        sourceUrl: string | null;
+        originalName: string | null;
+        licenseStatus: string | null;
+        mediaReferences: import("@prisma/client/runtime/library").JsonValue;
+        sourceImportedAt: Date | null;
         createdByUserId: string | null;
     }, never, import("@prisma/client/runtime/library").DefaultArgs>;
     update(userId: string, id: string, dto: UpdateExerciseDto): Promise<{
@@ -89,6 +107,12 @@ export declare class ExercisesService {
         mediaType: string;
         isCustom: boolean;
         slug: string;
+        sourceName: string | null;
+        sourceUrl: string | null;
+        originalName: string | null;
+        licenseStatus: string | null;
+        mediaReferences: import("@prisma/client/runtime/library").JsonValue;
+        sourceImportedAt: Date | null;
         createdByUserId: string | null;
     }>;
     remove(userId: string, id: string): Promise<{
