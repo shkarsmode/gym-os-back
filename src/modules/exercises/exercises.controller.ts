@@ -1,0 +1,38 @@
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
+import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
+import { CreateExerciseDto, UpdateExerciseDto } from "./dto/exercise.dto";
+import { ExercisesService } from "./exercises.service";
+
+@Controller("exercises")
+export class ExercisesController {
+    constructor(private readonly exercisesService: ExercisesService) {}
+
+    @Get()
+    findAll() {
+        return this.exercisesService.findAll();
+    }
+
+    @Get(":id")
+    findOne(@Param("id") id: string) {
+        return this.exercisesService.findOne(id);
+    }
+
+    @Post()
+    @UseGuards(JwtAuthGuard)
+    create(@CurrentUser() user: RequestUser, @Body() dto: CreateExerciseDto) {
+        return this.exercisesService.create(user.id, dto);
+    }
+
+    @Patch(":id")
+    @UseGuards(JwtAuthGuard)
+    update(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: UpdateExerciseDto) {
+        return this.exercisesService.update(user.id, id, dto);
+    }
+
+    @Delete(":id")
+    @UseGuards(JwtAuthGuard)
+    remove(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+        return this.exercisesService.remove(user.id, id);
+    }
+}
