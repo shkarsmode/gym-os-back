@@ -174,7 +174,7 @@ GYMOS_AUTO_DB_PUSH="true"
 GYMOS_AUTO_IMPORT_EXRX="true"
 ```
 
-`GYMOS_AUTO_DB_PUSH` запускає `prisma db push --skip-generate` у Vercel Build Step. `GYMOS_AUTO_IMPORT_EXRX` імпортує тільки ExRx reference-only каталог і пропускає дублікати за `originalName`, `sourceUrl` і `slug`; він не очищує workouts/users. Після першого успішного деплою ці прапорці краще повернути у `"false"` і далі керувати схемою через migrations.
+`GYMOS_AUTO_DB_PUSH` запускає `prisma db push --skip-generate` під час guarded Vercel install/postinstall step. `GYMOS_AUTO_IMPORT_EXRX` імпортує тільки ExRx reference-only каталог і пропускає дублікати за `originalName`, `sourceUrl` і `slug`; він не очищує workouts/users. Після першого успішного деплою ці прапорці краще повернути у `"false"` і далі керувати схемою через migrations.
 
 Якщо Vercel build падає на `node_modules/.bin/prisma: Permission denied`, переконайся, що задеплоєна версія має scripts із прямим Node entrypoint:
 
