@@ -53,14 +53,20 @@ npm run prisma:migrate
 npm run seed
 ```
 
-Seed створює 3 demo users, каталог вправ, шаблони, completed/planned/active тренування, cardio, PR, achievements і demo strength standards.
+Для Vercel/managed PostgreSQL без migration history можна оновити схему demo-бази напряму:
+
+```powershell
+npm run prisma:push
+```
+
+Seed створює 3 demo users, базовий каталог вправ, ExRx reference-only каталог, шаблони, completed/planned/active тренування, cardio, PR, achievements і demo strength standards.
 
 ## Google OAuth
 
 Створи OAuth credentials у Google Cloud Console:
 
 - Authorized redirect URI: `http://localhost:3000/auth/google/callback`
-- Production redirect URI: `https://your-api-domain.vercel.app/auth/google/callback`
+- Production redirect URI: `https://gym-os-back.vercel.app/auth/google/callback`
 
 Потрібні env variables:
 
@@ -70,10 +76,20 @@ GOOGLE_CLIENT_SECRET=""
 GOOGLE_CALLBACK_URL="http://localhost:3000/auth/google/callback"
 JWT_SECRET="replace-with-a-long-random-secret"
 FRONTEND_URL="http://localhost:8080"
+ADMIN_EMAILS="you@example.com"
+ALLOW_FILE_ORIGIN="false"
 NODE_ENV="development"
 ```
 
-Auth зберігає JWT session у HTTP-only cookie `gymos_session`.
+Для Vercel production постав:
+
+```env
+GOOGLE_CALLBACK_URL="https://gym-os-back.vercel.app/auth/google/callback"
+FRONTEND_URL="https://your-frontend-domain.vercel.app"
+NODE_ENV="production"
+```
+
+Auth зберігає JWT session у HTTP-only cookie `gymos_session`. У production cookie використовує `SameSite=None; Secure`, тому frontend має працювати з HTTPS origin. Для локального `file://` dev-режиму можна тимчасово поставити `ALLOW_FILE_ORIGIN="true"`, але для Google OAuth краще запускати frontend через HTTP origin або задеплоїти його.
 
 ## REST API
 
@@ -134,6 +150,7 @@ Templates, stats і data:
 - `GET /achievements/me`
 - `GET /export`
 - `POST /import`
+- `POST /import/exercises`
 
 ## Vercel deploy
 
@@ -146,11 +163,20 @@ Backend містить:
 
 Для PostgreSQL на Vercel використовуй pooled connection string із Neon, Supabase, Vercel Postgres або іншого managed PostgreSQL provider. Для довготривалого NestJS API часто простіше мати persistent Node host, але цей backend має Vercel-compatible serverless entrypoint для production demo і помірного трафіку.
 
+Якщо Vercel build падає на `node_modules/.bin/prisma: Permission denied`, переконайся, що задеплоєна версія має scripts із прямим Node entrypoint:
+
+```json
+"postinstall": "node ./node_modules/prisma/build/index.js generate"
+```
+
+Після цього зроби redeploy. Якщо Vercel продовжить брати старий cache, запусти redeploy з очищенням build cache.
+
 ## Quality commands
 
 ```powershell
 npm run prisma:validate
 npm run prisma:generate
+npm run prisma:push
 npm run build
 ```
 
@@ -161,3 +187,4 @@ npm run build
 - `GOOGLE_CLIENT_SECRET`
 - `JWT_SECRET`
 - `FRONTEND_URL`
+- `ADMIN_EMAILS`

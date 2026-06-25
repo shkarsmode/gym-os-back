@@ -4,15 +4,16 @@
     "private": true,
     "description": "GymOS NestJS API",
     "scripts": {
-        "build": "nest build",
+        "build": "node ./node_modules/@nestjs/cli/bin/nest.js build",
         "postinstall": "node ./node_modules/prisma/build/index.js generate",
         "start": "node dist/main.js",
-        "start:dev": "nest start --watch",
+        "start:dev": "node ./node_modules/@nestjs/cli/bin/nest.js start --watch",
         "start:prod": "node dist/main.js",
-        "prisma:generate": "prisma generate",
-        "prisma:validate": "prisma validate",
-        "prisma:migrate": "prisma migrate dev",
-        "seed": "tsx prisma/seed.ts"
+        "prisma:generate": "node ./node_modules/prisma/build/index.js generate",
+        "prisma:validate": "node ./node_modules/prisma/build/index.js validate",
+        "prisma:push": "node ./node_modules/prisma/build/index.js db push",
+        "prisma:migrate": "node ./node_modules/prisma/build/index.js migrate dev",
+        "seed": "node --import tsx prisma/seed.ts"
     },
     "dependencies": {
         "@nestjs/common": "^10.4.20",
@@ -48,6 +49,6 @@
         "typescript": "^5.7.2"
     },
     "prisma": {
-        "seed": "tsx prisma/seed.ts"
+        "seed": "node --import tsx prisma/seed.ts"
     }
 }
