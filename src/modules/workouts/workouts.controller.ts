@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 import { WorkoutsService } from "./workouts.service";
 
+// API uses GET + POST only (no PUT/PATCH/DELETE): some networks/proxies and the
+// browser preflight behaved badly on the other verbs, so every mutation is a POST.
 @Controller("workouts")
 @UseGuards(JwtAuthGuard)
 export class WorkoutsController {
@@ -24,22 +26,17 @@ export class WorkoutsController {
         return this.workoutsService.create(user.id, dto);
     }
 
-    @Put(":id")
+    @Post(":id/save")
     save(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: SaveWorkoutDto) {
         return this.workoutsService.saveFull(user.id, id, dto);
     }
 
-    @Post(":id/save")
-    saveViaPost(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: SaveWorkoutDto) {
-        return this.workoutsService.saveFull(user.id, id, dto);
-    }
-
-    @Patch(":id")
+    @Post(":id/update")
     update(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: UpdateWorkoutDto) {
         return this.workoutsService.update(user.id, id, dto);
     }
 
-    @Delete(":id")
+    @Post(":id/delete")
     remove(@CurrentUser() user: RequestUser, @Param("id") id: string) {
         return this.workoutsService.remove(user.id, id);
     }
@@ -59,12 +56,12 @@ export class WorkoutsController {
         return this.workoutsService.addExercise(user.id, id, dto);
     }
 
-    @Patch(":id/exercises/:workoutExerciseId")
+    @Post(":id/exercises/:workoutExerciseId/update")
     updateExercise(@CurrentUser() user: RequestUser, @Param("id") id: string, @Param("workoutExerciseId") workoutExerciseId: string, @Body() dto: UpdateWorkoutExerciseDto) {
         return this.workoutsService.updateExercise(user.id, id, workoutExerciseId, dto);
     }
 
-    @Delete(":id/exercises/:workoutExerciseId")
+    @Post(":id/exercises/:workoutExerciseId/delete")
     deleteExercise(@CurrentUser() user: RequestUser, @Param("id") id: string, @Param("workoutExerciseId") workoutExerciseId: string) {
         return this.workoutsService.deleteExercise(user.id, id, workoutExerciseId);
     }
@@ -74,12 +71,12 @@ export class WorkoutsController {
         return this.workoutsService.addSet(user.id, id, workoutExerciseId, dto);
     }
 
-    @Patch(":id/exercises/:workoutExerciseId/sets/:setId")
+    @Post(":id/exercises/:workoutExerciseId/sets/:setId/update")
     updateSet(@CurrentUser() user: RequestUser, @Param("id") id: string, @Param("workoutExerciseId") workoutExerciseId: string, @Param("setId") setId: string, @Body() dto: UpdateWorkoutSetDto) {
         return this.workoutsService.updateSet(user.id, id, workoutExerciseId, setId, dto);
     }
 
-    @Delete(":id/exercises/:workoutExerciseId/sets/:setId")
+    @Post(":id/exercises/:workoutExerciseId/sets/:setId/delete")
     deleteSet(@CurrentUser() user: RequestUser, @Param("id") id: string, @Param("workoutExerciseId") workoutExerciseId: string, @Param("setId") setId: string) {
         return this.workoutsService.deleteSet(user.id, id, workoutExerciseId, setId);
     }
@@ -89,12 +86,12 @@ export class WorkoutsController {
         return this.workoutsService.addCardio(user.id, id, dto);
     }
 
-    @Patch(":id/cardio/:cardioId")
+    @Post(":id/cardio/:cardioId/update")
     updateCardio(@CurrentUser() user: RequestUser, @Param("id") id: string, @Param("cardioId") cardioId: string, @Body() dto: UpdateCardioSessionDto) {
         return this.workoutsService.updateCardio(user.id, id, cardioId, dto);
     }
 
-    @Delete(":id/cardio/:cardioId")
+    @Post(":id/cardio/:cardioId/delete")
     deleteCardio(@CurrentUser() user: RequestUser, @Param("id") id: string, @Param("cardioId") cardioId: string) {
         return this.workoutsService.deleteCardio(user.id, id, cardioId);
     }

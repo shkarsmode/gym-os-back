@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { CreateExerciseDto, UpdateExerciseDto } from "./dto/exercise.dto";
@@ -30,13 +30,13 @@ export class ExercisesController {
         return this.exercisesService.resetCuratedCatalog(user);
     }
 
-    @Patch(":id")
+    @Post(":id/update")
     @UseGuards(JwtAuthGuard)
     update(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: UpdateExerciseDto) {
         return this.exercisesService.update(user.id, id, dto);
     }
 
-    @Delete(":id")
+    @Post(":id/delete")
     @UseGuards(JwtAuthGuard)
     remove(@CurrentUser() user: RequestUser, @Param("id") id: string) {
         return this.exercisesService.remove(user.id, id);

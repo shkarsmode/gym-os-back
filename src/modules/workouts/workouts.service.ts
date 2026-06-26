@@ -159,7 +159,10 @@ export class WorkoutsService {
         }
 
         await this.prisma.$transaction(operations);
-        return this.findOne(id);
+        // Return a lightweight ack instead of a deep re-read: the client keeps its
+        // own optimistic state and ignores the body, so the extra query just slows
+        // the save down.
+        return { ok: true, id, status: dto.status };
     }
 
     private deriveTimings(status: string, existing: { startedAt: Date | null; finishedAt: Date | null } | null) {

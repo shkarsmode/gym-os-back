@@ -18,7 +18,12 @@ export class AuthController {
     async googleCallback(@Req() request: Request, @Res() response: Response) {
         const user = await this.authService.upsertGoogleUser(request.user as any);
         this.authService.attachSessionCookie(response, user);
-        return response.redirect(process.env.FRONTEND_URL || "/");
+        // Also hand the token to the SPA in the URL fragment so iOS Safari (which
+        // blocks the cross-site cookie) can authenticate via Bearer header. The
+        // fragment is not sent to servers/logs and the SPA strips it immediately.
+        const token = this.authService.createSessionToken(user);
+        const frontend = (process.env.FRONTEND_URL || "/").split(",")[0].trim().replace(/\/$/, "");
+        return response.redirect(`${frontend}/#token=${encodeURIComponent(token)}`);
     }
 
     @Post("logout")

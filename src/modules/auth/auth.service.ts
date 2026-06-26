@@ -69,12 +69,16 @@ export class AuthService {
         return user;
     }
 
-    attachSessionCookie(response: Response, user: { id: string; email: string; displayName: string }) {
-        const token = this.jwtService.sign({
+    createSessionToken(user: { id: string; email: string; displayName: string }) {
+        return this.jwtService.sign({
             sub: user.id,
             email: user.email,
             displayName: user.displayName
         });
+    }
+
+    attachSessionCookie(response: Response, user: { id: string; email: string; displayName: string }) {
+        const token = this.createSessionToken(user);
         const isProduction = process.env.NODE_ENV === "production";
 
         response.cookie("gymos_session", token, {
@@ -90,7 +94,9 @@ export class AuthService {
     }
 
     async readUserFromRequest(request: Request) {
-        const token = request.cookies?.gymos_session;
+        const header = request.headers?.authorization || "";
+        const bearer = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+        const token = request.cookies?.gymos_session || bearer;
         if (!token) {
             return null;
         }

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { CreateBodyweightDto } from "./dto/create-bodyweight.dto";
@@ -19,7 +19,7 @@ export class BodyweightController {
         return this.bodyweightService.createMine(user.id, dto);
     }
 
-    @Delete(":entryId")
+    @Post(":entryId/delete")
     deleteMine(@CurrentUser() user: RequestUser, @Param("entryId") entryId: string) {
         return this.bodyweightService.deleteMine(user.id, entryId);
     }

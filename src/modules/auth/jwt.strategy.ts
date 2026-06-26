@@ -7,7 +7,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
     constructor() {
         super({
             jwtFromRequest: ExtractJwt.fromExtractors([
-                (request) => request?.cookies?.gymos_session || null
+                (request) => request?.cookies?.gymos_session || null,
+                // Bearer fallback: iOS Safari blocks cross-site cookies between the
+                // *.vercel.app subdomains (ITP), so the SPA also sends the token here.
+                ExtractJwt.fromAuthHeaderAsBearerToken()
             ]),
             secretOrKey: process.env.JWT_SECRET || "development-only-secret"
         });
