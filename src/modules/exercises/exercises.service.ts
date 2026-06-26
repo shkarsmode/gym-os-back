@@ -165,8 +165,14 @@ export class ExercisesService {
     }
 
     private async ensureCuratedCatalogWhenEmpty() {
-        const count = await this.prisma.exercise.count();
-        if (count > 0) {
+        const existing = await this.prisma.exercise.findMany({
+            where: { slug: { in: curatedExercises.map((exercise) => exercise.slug) } },
+            select: { slug: true }
+        });
+        const existingSlugs = new Set(existing.map((exercise) => exercise.slug));
+        const missingCuratedExercises = curatedExercises.filter((exercise) => !existingSlugs.has(exercise.slug));
+
+        if (!missingCuratedExercises.length) {
             return;
         }
 
@@ -180,8 +186,6 @@ export class ExercisesService {
                 }));
             }
 
-            await transaction.workoutTemplateExercise.deleteMany();
-            await transaction.workoutTemplate.deleteMany({ where: { userId: null } });
             await transaction.strengthStandard.deleteMany();
             await this.createCuratedTemplates(transaction, curated);
             await this.createCuratedStandards(transaction, curated);
@@ -189,6 +193,9 @@ export class ExercisesService {
     }
 
     private async createCuratedTemplates(transaction: Prisma.TransactionClient, curated: Array<{ id: string; slug: string }>) {
+        await transaction.workoutTemplateExercise.deleteMany();
+        await transaction.workoutTemplate.deleteMany({ where: { userId: null } });
+
         const bySlug = new Map(curated.map((exercise) => [exercise.slug, exercise]));
         const rows = [
             { type: "push", title: "Push", description: "Базовий жим для грудей.", slugs: ["bench-press"] },
