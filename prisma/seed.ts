@@ -1,7 +1,4 @@
 import { PrismaClient, WorkoutSetType, WorkoutStatus } from "@prisma/client";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { normalizeExerciseCatalogPayload } from "../src/modules/import-export/exercise-catalog-importer";
 
 const prisma = new PrismaClient();
 
@@ -13,35 +10,20 @@ const users = [
 
 const exercises = [
     ["bench-press", "Жим лежачи", ["Bench Press", "Barbell Bench"], "Груди", ["Трицепс", "Плечі"], "Горизонтальний жим", "Штанга", "Сила", "Середній"],
-    ["incline-dumbbell-press", "Жим гантелей під кутом", ["Incline Dumbbell Press"], "Груди", ["Плечі", "Трицепс"], "Горизонтальний жим", "Гантелі", "Гіпертрофія", "Середній"],
-    ["pull-ups", "Підтягування", ["Pull-ups", "Pullup"], "Спина", ["Біцепс"], "Вертикальна тяга", "Вага тіла", "Сила", "Середній"],
-    ["barbell-row", "Тяга штанги в нахилі", ["Barbell Row"], "Спина", ["Біцепс"], "Горизонтальна тяга", "Штанга", "Сила", "Середній"],
-    ["lat-pulldown", "Тяга верхнього блока", ["Lat Pulldown"], "Спина", ["Біцепс"], "Вертикальна тяга", "Блок", "Гіпертрофія", "Початковий"],
-    ["shoulder-press", "Жим над головою", ["Overhead Press", "OHP"], "Плечі", ["Трицепс"], "Вертикальний жим", "Штанга", "Сила", "Середній"],
-    ["lateral-raise", "Підйом гантелей в сторони", ["Lateral Raise"], "Плечі", [], "Підйом", "Гантелі", "Ізоляція", "Початковий"],
-    ["barbell-squat", "Присідання зі штангою", ["Barbell Squat"], "Квадрицепс", ["Сідниці", "Задня поверхня стегна"], "Присідання", "Штанга", "Сила", "Просунутий"],
-    ["romanian-deadlift", "Румунська тяга", ["Romanian Deadlift", "RDL"], "Задня поверхня стегна", ["Сідниці", "Спина"], "Hinge", "Штанга", "Сила", "Середній"],
-    ["leg-press", "Жим ногами", ["Leg Press"], "Квадрицепс", ["Сідниці"], "Присідання", "Тренажер", "Гіпертрофія", "Початковий"],
-    ["triceps-pushdown", "Розгинання на блоці", ["Triceps Pushdown"], "Трицепс", [], "Розгинання", "Блок", "Ізоляція", "Початковий"],
-    ["hammer-curl", "Молоткові згинання", ["Hammer Curl"], "Біцепс", ["Передпліччя"], "Згинання", "Гантелі", "Ізоляція", "Початковий"],
-    ["plank", "Планка", ["Plank"], "Прес", ["Все тіло"], "Кор", "Вага тіла", "Кор", "Початковий"],
-    ["treadmill", "Бігова доріжка", ["Treadmill"], "Все тіло", ["Литки"], "Кардіо", "Тренажер", "Кардіо", "Початковий"],
-    ["bike", "Велотренажер", ["Bike"], "Квадрицепс", ["Литки"], "Кардіо", "Тренажер", "Кардіо", "Початковий"]
+    ["lat-pulldown", "Тяга верхнього блока", ["Lat Pulldown"], "Спина", ["Біцепс"], "Вертикальна тяга", "Блок", "Гіпертрофія", "Початковий"]
 ] as const;
 
 const templates = [
-    { type: "push", title: "Push", description: "Груди, плечі та трицепс.", exercises: ["bench-press", "incline-dumbbell-press", "shoulder-press", "lateral-raise", "triceps-pushdown"] },
-    { type: "pull", title: "Pull", description: "Спина та біцепс.", exercises: ["pull-ups", "barbell-row", "lat-pulldown", "hammer-curl"] },
-    { type: "legs", title: "Legs", description: "Присідання, hinge і нижня частина тіла.", exercises: ["barbell-squat", "romanian-deadlift", "leg-press"] },
-    { type: "full_body", title: "Full Body", description: "Компактна силова сесія.", exercises: ["bench-press", "pull-ups", "barbell-squat", "plank"] },
-    { type: "cardio", title: "Cardio", description: "Тренування з фокусом на кондицію.", exercises: ["treadmill", "bike"] }
+    { type: "push", title: "Push", description: "Базовий жим для грудей.", exercises: ["bench-press"] },
+    { type: "pull", title: "Pull", description: "Вертикальна тяга для спини.", exercises: ["lat-pulldown"] },
+    { type: "upper", title: "Upper", description: "Компактна сесія верху.", exercises: ["bench-press", "lat-pulldown"] },
+    { type: "full_body", title: "Full Body", description: "Мінімальна силова сесія з curated-каталогу.", exercises: ["bench-press", "lat-pulldown"] }
 ];
 
 async function main() {
     await clearData();
     await seedUsers();
     await seedExercises();
-    await seedImportedExercises();
     await seedTemplates();
     await seedWorkouts();
     await seedStandards();
@@ -121,15 +103,6 @@ async function seedExercises() {
     }
 }
 
-async function seedImportedExercises() {
-    const payload = JSON.parse(readFileSync(join(__dirname, "data", "exrx-exercises.json"), "utf8"));
-    const result = normalizeExerciseCatalogPayload(payload);
-    for (const exercise of result.exercises) {
-        await prisma.exercise.create({ data: exercise as any });
-    }
-    console.log(`Seeded ${result.exercises.length} ExRx reference exercises, skipped ${result.skipped}.`);
-}
-
 async function seedTemplates() {
     for (const template of templates) {
         await prisma.workoutTemplate.create({
@@ -155,13 +128,12 @@ async function seedTemplates() {
 
 async function seedWorkouts() {
     const rows = [
-        ["user-daniil", -21, "Push сила", "push", "completed", ["bench-press", "incline-dumbbell-press", "triceps-pushdown"]],
-        ["user-daniil", -14, "Pull обсяг", "pull", "completed", ["pull-ups", "barbell-row", "lat-pulldown"]],
-        ["user-daniil", -7, "Legs обсяг", "legs", "completed", ["barbell-squat", "romanian-deadlift", "leg-press"]],
-        ["user-daniil", 2, "Legs план", "legs", "planned", ["barbell-squat", "romanian-deadlift"]],
-        ["user-daniil", 0, "Push активне", "push", "active", ["bench-press", "shoulder-press"]],
-        ["user-anastasia", -10, "Кардіо і кор", "cardio", "completed", ["treadmill", "bike", "plank"]],
-        ["user-maxim", -5, "Upper щільність", "upper", "completed", ["bench-press", "barbell-row", "shoulder-press"]]
+        ["user-daniil", -21, "Push сила", "push", "completed", ["bench-press"]],
+        ["user-daniil", -14, "Pull обсяг", "pull", "completed", ["lat-pulldown"]],
+        ["user-daniil", 2, "Pull план", "pull", "planned", ["lat-pulldown"]],
+        ["user-daniil", 0, "Push активне", "push", "active", ["bench-press"]],
+        ["user-anastasia", -10, "Кардіо і мобільність", "cardio", "completed", []],
+        ["user-maxim", -5, "Upper щільність", "upper", "completed", ["bench-press", "lat-pulldown"]]
     ] as const;
 
     for (const [userId, offset, title, workoutType, status, slugs] of rows) {
@@ -201,7 +173,7 @@ async function seedWorkouts() {
 }
 
 async function seedStandards() {
-    const ranked = ["bench-press", "barbell-squat", "romanian-deadlift", "pull-ups", "shoulder-press", "barbell-row"];
+    const ranked = ["bench-press", "lat-pulldown"];
     const levels = [
         ["beginner", 0.45],
         ["novice", 0.7],
@@ -228,7 +200,7 @@ async function seedStandards() {
                         bodyweightMax: 90,
                         level,
                         requiredWeight: Math.round(80 * multiplier * (gender === "female" ? 0.62 : 1)),
-                        repetitions: slug === "pull-ups" ? 5 : 1,
+                        repetitions: 1,
                         sourceName: "Демо-нормативи",
                         sourceNote: "Демо-нормативи використовуються лише для прикладу. Їх можна оновити під реальні стандарти пізніше."
                     }

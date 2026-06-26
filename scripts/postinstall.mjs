@@ -12,7 +12,7 @@ if (isEnabled(process.env.GYMOS_AUTO_DB_PUSH)) {
 }
 
 if (isEnabled(process.env.GYMOS_AUTO_IMPORT_EXRX)) {
-    run(process.execPath, ["--import", "tsx", "prisma/import-exrx.ts"]);
+    console.warn("GYMOS_AUTO_IMPORT_EXRX is deprecated and ignored. Use POST /import/exercises for manual imports.");
 }
 
 function run(command, args) {

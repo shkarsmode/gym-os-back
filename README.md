@@ -77,9 +77,9 @@ GOOGLE_CALLBACK_URL="http://localhost:3000/auth/google/callback"
 JWT_SECRET="replace-with-a-long-random-secret"
 FRONTEND_URL="http://localhost:8080"
 ADMIN_EMAILS="you@example.com"
+DEMO_OWNER_EMAIL="you@example.com"
 ALLOW_FILE_ORIGIN="false"
 GYMOS_AUTO_DB_PUSH="false"
-GYMOS_AUTO_IMPORT_EXRX="false"
 NODE_ENV="development"
 ```
 
@@ -171,10 +171,9 @@ Backend містить:
 
 ```env
 GYMOS_AUTO_DB_PUSH="true"
-GYMOS_AUTO_IMPORT_EXRX="true"
 ```
 
-`GYMOS_AUTO_DB_PUSH` запускає `prisma db push --skip-generate` під час guarded Vercel install/postinstall step. `GYMOS_AUTO_IMPORT_EXRX` імпортує тільки ExRx reference-only каталог і пропускає дублікати за `originalName`, `sourceUrl` і `slug`; він не очищує workouts/users. Після першого успішного деплою ці прапорці краще повернути у `"false"` і далі керувати схемою через migrations.
+`GYMOS_AUTO_DB_PUSH` запускає `prisma db push --skip-generate` під час guarded Vercel install/postinstall step. Старий прапорець `GYMOS_AUTO_IMPORT_EXRX` більше не імпортує каталог автоматично, щоб production DB не роздувалася тисячами вправ. Каталог можна вручну імпортувати через `POST /import/exercises`, а curated-набір можна відновити через `POST /exercises/reset-curated` для admin/demo owner. Після першого успішного деплою `GYMOS_AUTO_DB_PUSH` краще повернути у `"false"` і далі керувати схемою через migrations.
 
 Якщо Vercel build падає на `node_modules/.bin/prisma: Permission denied`, переконайся, що задеплоєна версія має scripts із прямим Node entrypoint:
 
@@ -201,3 +200,4 @@ npm run build
 - `JWT_SECRET`
 - `FRONTEND_URL`
 - `ADMIN_EMAILS`
+- `DEMO_OWNER_EMAIL`

@@ -24,6 +24,12 @@ export class ExercisesController {
         return this.exercisesService.create(user.id, dto);
     }
 
+    @Post("reset-curated")
+    @UseGuards(JwtAuthGuard)
+    resetCurated(@CurrentUser() user: RequestUser) {
+        return this.exercisesService.resetCuratedCatalog(user);
+    }
+
     @Patch(":id")
     @UseGuards(JwtAuthGuard)
     update(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: UpdateExerciseDto) {
