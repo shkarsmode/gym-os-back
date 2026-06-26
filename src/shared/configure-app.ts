@@ -7,6 +7,12 @@ export function configureApp(app: INestApplication) {
         .split(",")
         .map((origin) => origin.trim())
         .filter(Boolean);
+    ["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:5500", "http://127.0.0.1:5500"]
+        .forEach((origin) => {
+            if (!allowedOrigins.includes(origin)) {
+                allowedOrigins.push(origin);
+            }
+        });
     if (process.env.ALLOW_FILE_ORIGIN === "true") {
         allowedOrigins.push("null");
     }
