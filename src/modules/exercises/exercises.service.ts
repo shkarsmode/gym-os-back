@@ -41,7 +41,8 @@ const curatedExercises = [
 export class ExercisesService {
     constructor(private readonly prisma: PrismaService) {}
 
-    findAll() {
+    async findAll() {
+        await this.ensureCuratedCatalogWhenEmpty();
         return this.prisma.exercise.findMany({ orderBy: { name: "asc" } });
     }
 
@@ -161,6 +162,30 @@ export class ExercisesService {
             isCustom: false,
             createdByUserId: null
         };
+    }
+
+    private async ensureCuratedCatalogWhenEmpty() {
+        const count = await this.prisma.exercise.count();
+        if (count > 0) {
+            return;
+        }
+
+        await this.prisma.$transaction(async (transaction) => {
+            const curated: Exercise[] = [];
+            for (const exercise of curatedExercises) {
+                curated.push(await transaction.exercise.upsert({
+                    where: { slug: exercise.slug },
+                    update: this.curatedExerciseData(exercise),
+                    create: this.curatedExerciseData(exercise)
+                }));
+            }
+
+            await transaction.workoutTemplateExercise.deleteMany();
+            await transaction.workoutTemplate.deleteMany({ where: { userId: null } });
+            await transaction.strengthStandard.deleteMany();
+            await this.createCuratedTemplates(transaction, curated);
+            await this.createCuratedStandards(transaction, curated);
+        });
     }
 
     private async createCuratedTemplates(transaction: Prisma.TransactionClient, curated: Array<{ id: string; slug: string }>) {
