@@ -17,8 +17,9 @@ export function configureApp(app: INestApplication) {
         allowedOrigins.push("null");
     }
 
-    app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "750kb" }));
-    app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || "750kb" }));
+    // Enable CORS BEFORE body parsing so that even body-parse/early errors carry
+    // CORS headers (otherwise such failures surface in the browser as opaque
+    // "CORS error" instead of the real status code).
     app.enableCors({
         origin: (origin, callback) => {
             if (!origin || allowedOrigins.includes(origin)) {
@@ -29,6 +30,8 @@ export function configureApp(app: INestApplication) {
         },
         credentials: true
     });
+    app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "750kb" }));
+    app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || "750kb" }));
     app.use(cookieParser());
     app.useGlobalPipes(new ValidationPipe({
         whitelist: true,

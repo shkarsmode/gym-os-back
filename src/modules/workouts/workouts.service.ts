@@ -79,60 +79,58 @@ export class WorkoutsService {
             finishedAt: timings.finishedAt
         };
 
-        await this.prisma.$transaction(async (transaction) => {
-            if (dto.status === "active") {
-                await transaction.workout.updateMany({
-                    where: { userId, status: "active", id: { not: id } },
-                    data: { status: "completed", finishedAt: new Date() }
-                });
+        const exercisesCreate = exercises.map((exercise, index) => ({
+            exerciseId: exercise.exerciseId,
+            order: exercise.order ?? index + 1,
+            notes: exercise.notes ?? null,
+            sets: {
+                create: (exercise.sets || []).map((set) => ({
+                    type: (set.type || "working") as WorkoutSetType,
+                    weight: Number(set.weight) || 0,
+                    repetitions: Number(set.repetitions) || 0,
+                    rpe: set.rpe === undefined || set.rpe === null ? null : Number(set.rpe),
+                    restSeconds: set.restSeconds ?? 90,
+                    isCompleted: Boolean(set.isCompleted),
+                    notes: set.notes ?? null
+                }))
             }
+        }));
+        const cardioCreate = (dto.cardioSessions || []).map((cardio) => ({
+            type: cardio.type || "treadmill",
+            durationMinutes: Number(cardio.durationMinutes) || 0,
+            distance: cardio.distance === undefined || cardio.distance === null ? null : Number(cardio.distance),
+            calories: cardio.calories === undefined || cardio.calories === null ? null : Number(cardio.calories),
+            averageHeartRate: cardio.averageHeartRate === undefined || cardio.averageHeartRate === null ? null : Number(cardio.averageHeartRate),
+            intensity: cardio.intensity ?? null,
+            notes: cardio.notes ?? null
+        }));
 
-            if (existing) {
-                await transaction.workoutExercise.deleteMany({ where: { workoutId: id } });
-                await transaction.cardioSession.deleteMany({ where: { workoutId: id } });
-                await transaction.workout.update({ where: { id }, data: scalar });
-            } else {
-                await transaction.workout.create({ data: { id, userId, ...scalar } });
-            }
+        // IMPORTANT: use the batch-array form of $transaction (not the interactive
+        // callback). The production DB is behind a connection pooler in transaction
+        // mode (Neon/pgbouncer), which does NOT support interactive transactions —
+        // they hang and the serverless function times out (surfaces as a browser
+        // "CORS error"). The array form runs as a single batched BEGIN..COMMIT.
+        const operations: any[] = [];
+        if (dto.status === "active") {
+            operations.push(this.prisma.workout.updateMany({
+                where: { userId, status: "active", id: { not: id } },
+                data: { status: "completed", finishedAt: new Date() }
+            }));
+        }
+        if (existing) {
+            operations.push(this.prisma.workoutExercise.deleteMany({ where: { workoutId: id } }));
+            operations.push(this.prisma.cardioSession.deleteMany({ where: { workoutId: id } }));
+            operations.push(this.prisma.workout.update({
+                where: { id },
+                data: { ...scalar, exercises: { create: exercisesCreate }, cardioSessions: { create: cardioCreate } }
+            }));
+        } else {
+            operations.push(this.prisma.workout.create({
+                data: { id, userId, ...scalar, exercises: { create: exercisesCreate }, cardioSessions: { create: cardioCreate } }
+            }));
+        }
 
-            for (const [index, exercise] of exercises.entries()) {
-                await transaction.workoutExercise.create({
-                    data: {
-                        workoutId: id,
-                        exerciseId: exercise.exerciseId,
-                        order: exercise.order ?? index + 1,
-                        notes: exercise.notes ?? null,
-                        sets: {
-                            create: (exercise.sets || []).map((set) => ({
-                                type: (set.type || "working") as WorkoutSetType,
-                                weight: Number(set.weight) || 0,
-                                repetitions: Number(set.repetitions) || 0,
-                                rpe: set.rpe === undefined || set.rpe === null ? null : Number(set.rpe),
-                                restSeconds: set.restSeconds ?? 90,
-                                isCompleted: Boolean(set.isCompleted),
-                                notes: set.notes ?? null
-                            }))
-                        }
-                    }
-                });
-            }
-
-            for (const cardio of dto.cardioSessions || []) {
-                await transaction.cardioSession.create({
-                    data: {
-                        workoutId: id,
-                        type: cardio.type || "treadmill",
-                        durationMinutes: Number(cardio.durationMinutes) || 0,
-                        distance: cardio.distance === undefined || cardio.distance === null ? null : Number(cardio.distance),
-                        calories: cardio.calories === undefined || cardio.calories === null ? null : Number(cardio.calories),
-                        averageHeartRate: cardio.averageHeartRate === undefined || cardio.averageHeartRate === null ? null : Number(cardio.averageHeartRate),
-                        intensity: cardio.intensity ?? null,
-                        notes: cardio.notes ?? null
-                    }
-                });
-            }
-        });
-
+        await this.prisma.$transaction(operations);
         return this.findOne(id);
     }
 
