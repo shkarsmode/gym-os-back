@@ -32,6 +32,7 @@ export class ImportExportService {
                 displayName: item.profile?.displayName || item.displayName,
                 avatarInitials: initials(item.profile?.displayName || item.displayName),
                 avatarColor: colorFor(item.id),
+                avatarUrl: item.avatarUrl || "",
                 height: item.profile?.height || 0,
                 bodyweight: numberValue(item.profile?.bodyweight, 0),
                 birthYear: 2000,
