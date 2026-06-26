@@ -18,6 +18,21 @@ export class ImportExportController {
         return this.importExportService.import(user, payload);
     }
 
+    @Post("import/start")
+    startImport(@CurrentUser() user: RequestUser, @Body() payload: unknown) {
+        return this.importExportService.startImport(user, payload);
+    }
+
+    @Post("import/chunk")
+    importChunk(@CurrentUser() user: RequestUser, @Body() payload: unknown) {
+        return this.importExportService.importChunk(user, payload);
+    }
+
+    @Post("import/finish")
+    finishImport(@CurrentUser() user: RequestUser, @Body() payload: unknown) {
+        return this.importExportService.finishImport(user, payload);
+    }
+
     @Post("import/exercises")
     importExercises(@CurrentUser() user: RequestUser, @Body() payload: unknown) {
         return this.importExportService.importExercises(user, payload);

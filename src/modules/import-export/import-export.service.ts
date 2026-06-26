@@ -217,6 +217,85 @@ export class ImportExportService {
         };
     }
 
+    async startImport(user: RequestUser, payload: any) {
+        const resources = readImportResources(payload?.resources);
+
+        await this.prisma.$transaction(async (transaction) => {
+            if (resources.includes("workouts")) {
+                await transaction.workout.deleteMany({ where: { userId: user.id } });
+            }
+
+            if (resources.includes("bodyweightEntries")) {
+                await transaction.userBodyweightEntry.deleteMany({ where: { userId: user.id } });
+            }
+
+            if (resources.includes("customExercises")) {
+                await transaction.exercise.deleteMany({ where: { isCustom: true, createdByUserId: user.id } });
+            }
+        });
+
+        return {
+            ok: true,
+            resources
+        };
+    }
+
+    async importChunk(user: RequestUser, payload: any) {
+        const resource = String(payload?.resource || "");
+        const items = Array.isArray(payload?.items) ? payload.items : [];
+
+        if (!["customExercises", "bodyweightEntries", "workouts"].includes(resource)) {
+            return {
+                ok: false,
+                resource,
+                imported: 0,
+                message: "Unsupported import resource"
+            };
+        }
+
+        const imported = await this.prisma.$transaction(async (transaction) => {
+            if (resource === "customExercises") {
+                const customExercises = items.filter((item: any) => item?.isCustom && item?.createdByUserId === user.id);
+                await importCustomExercises(transaction, user.id, customExercises);
+                return customExercises.length;
+            }
+
+            if (resource === "bodyweightEntries") {
+                const bodyweightEntries = items.filter((item: any) => item?.userId === user.id);
+                await importBodyweightEntries(transaction, user.id, bodyweightEntries);
+                return bodyweightEntries.length;
+            }
+
+            const workouts = items.filter((item: any) => item?.userId === user.id);
+            await importWorkouts(transaction, user.id, workouts);
+            return workouts.length;
+        });
+
+        return {
+            ok: true,
+            resource,
+            imported
+        };
+    }
+
+    async finishImport(user: RequestUser, payload: any) {
+        const [workouts, bodyweightEntries, customExercises] = await Promise.all([
+            this.prisma.workout.count({ where: { userId: user.id } }),
+            this.prisma.userBodyweightEntry.count({ where: { userId: user.id } }),
+            this.prisma.exercise.count({ where: { isCustom: true, createdByUserId: user.id } })
+        ]);
+
+        return {
+            ok: true,
+            requested: payload || {},
+            imported: {
+                workouts,
+                bodyweightEntries,
+                customExercises
+            }
+        };
+    }
+
     async importExercises(user: RequestUser, payload: unknown) {
         this.assertExerciseImportPermission(user);
 
@@ -271,6 +350,100 @@ function exerciseData(exercise: any, userId: string) {
         isCustom: true,
         createdByUserId: userId
     };
+}
+
+function readImportResources(resources: unknown) {
+    const allowedResources = ["customExercises", "bodyweightEntries", "workouts"];
+    if (!Array.isArray(resources)) {
+        return allowedResources;
+    }
+
+    const requestedResources = resources
+        .map((item) => String(item))
+        .filter((item) => allowedResources.includes(item));
+
+    return requestedResources.length > 0 ? requestedResources : allowedResources;
+}
+
+async function importCustomExercises(transaction: any, userId: string, customExercises: any[]) {
+    for (const exercise of customExercises) {
+        await transaction.exercise.upsert({
+            where: { id: exercise.id },
+            update: exerciseData(exercise, userId),
+            create: { id: exercise.id, slug: slugify(exercise.name), ...exerciseData(exercise, userId) }
+        });
+    }
+}
+
+async function importBodyweightEntries(transaction: any, userId: string, bodyweightEntries: any[]) {
+    for (const entry of bodyweightEntries) {
+        await transaction.userBodyweightEntry.upsert({
+            where: { id: entry.id },
+            update: {
+                date: parseDate(entry.date),
+                bodyweight: Number(entry.bodyweight) || 0,
+                notes: entry.notes || null
+            },
+            create: {
+                id: entry.id,
+                userId,
+                date: parseDate(entry.date),
+                bodyweight: Number(entry.bodyweight) || 0,
+                notes: entry.notes || null
+            }
+        });
+    }
+}
+
+async function importWorkouts(transaction: any, userId: string, workouts: any[]) {
+    for (const workout of workouts) {
+        await transaction.workout.deleteMany({ where: { id: workout.id, userId } });
+        await transaction.workout.create({
+            data: {
+                id: workout.id,
+                userId,
+                date: parseDate(workout.date),
+                title: workout.title || "Тренування",
+                status: (workout.status || "planned") as WorkoutStatus,
+                workoutType: workout.workoutType || "custom",
+                startedAt: workout.startedAt ? parseDate(workout.startedAt) : null,
+                finishedAt: workout.finishedAt ? parseDate(workout.finishedAt) : null,
+                notes: workout.notes || null,
+                exercises: {
+                    create: (workout.exercises || []).map((exercise: any, index: number) => ({
+                        id: exercise.id,
+                        exerciseId: exercise.exerciseId,
+                        order: exercise.order || index + 1,
+                        notes: exercise.notes || null,
+                        sets: {
+                            create: (exercise.sets || []).map((set: any) => ({
+                                id: set.id,
+                                type: (set.type || "working") as WorkoutSetType,
+                                weight: Number(set.weight) || 0,
+                                repetitions: Number(set.repetitions) || 0,
+                                rpe: Number(set.rpe) || null,
+                                restSeconds: Number(set.restSeconds) || 90,
+                                isCompleted: Boolean(set.isCompleted),
+                                notes: set.notes || null
+                            }))
+                        }
+                    }))
+                },
+                cardioSessions: {
+                    create: (workout.cardioSessions || []).map((session: any) => ({
+                        id: session.id,
+                        type: session.type || "treadmill",
+                        durationMinutes: Number(session.durationMinutes) || 0,
+                        distance: Number(session.distance) || null,
+                        calories: Number(session.calories) || null,
+                        averageHeartRate: Number(session.averageHeartRate) || null,
+                        intensity: session.intensity || null,
+                        notes: session.notes || null
+                    }))
+                }
+            }
+        });
+    }
 }
 
 function initials(value: string) {

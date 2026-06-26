@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import cookieParser from "cookie-parser";
+import express from "express";
 
 export function configureApp(app: INestApplication) {
     const allowedOrigins = String(process.env.FRONTEND_URL || "http://localhost:8080")
@@ -10,6 +11,8 @@ export function configureApp(app: INestApplication) {
         allowedOrigins.push("null");
     }
 
+    app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "750kb" }));
+    app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || "750kb" }));
     app.enableCors({
         origin: (origin, callback) => {
             if (!origin || allowedOrigins.includes(origin)) {

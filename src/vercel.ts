@@ -13,6 +13,7 @@ async function bootstrapServer() {
 
     const server = express();
     const app = await NestFactory.create(AppModule, new ExpressAdapter(server), {
+        bodyParser: false,
         logger: ["error", "warn", "log"]
     });
     configureApp(app);
