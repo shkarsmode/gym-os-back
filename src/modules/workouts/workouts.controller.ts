@@ -1,7 +1,7 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, UseGuards } from "@nestjs/common";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
-import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
+import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 import { WorkoutsService } from "./workouts.service";
 
 @Controller("workouts")
@@ -22,6 +22,11 @@ export class WorkoutsController {
     @Post()
     create(@CurrentUser() user: RequestUser, @Body() dto: CreateWorkoutDto) {
         return this.workoutsService.create(user.id, dto);
+    }
+
+    @Put(":id")
+    save(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: SaveWorkoutDto) {
+        return this.workoutsService.saveFull(user.id, id, dto);
     }
 
     @Patch(":id")

@@ -1,8 +1,8 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { WorkoutStatus } from "@prisma/client";
+import { WorkoutSetType, WorkoutStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { parseDateInput } from "../../shared/parse-date";
-import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
+import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 
 @Injectable()
 export class WorkoutsService {
@@ -46,6 +46,105 @@ export class WorkoutsService {
             },
             include: this.includeWorkout()
         });
+    }
+
+    // Atomic full upsert of a single workout (scalars + nested exercises/sets/cardio).
+    // Replaces the fragile "wipe-everything-then-reimport" save: a failure here rolls
+    // back the whole transaction, so a single workout can never be left half-deleted.
+    async saveFull(userId: string, id: string, dto: SaveWorkoutDto) {
+        const existing = await this.prisma.workout.findUnique({
+            where: { id },
+            select: { id: true, userId: true, startedAt: true, finishedAt: true }
+        });
+        if (existing && existing.userId !== userId) {
+            throw new ForbiddenException("Cannot edit another user's workout");
+        }
+
+        const requestedExercises = dto.exercises || [];
+        const exerciseIds = [...new Set(requestedExercises.map((item) => item.exerciseId).filter(Boolean))];
+        const known = exerciseIds.length
+            ? await this.prisma.exercise.findMany({ where: { id: { in: exerciseIds } }, select: { id: true } })
+            : [];
+        const knownIds = new Set(known.map((item) => item.id));
+        const exercises = requestedExercises.filter((item) => knownIds.has(item.exerciseId));
+
+        const timings = this.deriveTimings(dto.status, existing);
+        const scalar = {
+            date: parseDateInput(dto.date),
+            title: dto.title || "Тренування",
+            status: dto.status as WorkoutStatus,
+            workoutType: dto.workoutType || "custom",
+            notes: dto.notes ?? null,
+            startedAt: timings.startedAt,
+            finishedAt: timings.finishedAt
+        };
+
+        await this.prisma.$transaction(async (transaction) => {
+            if (dto.status === "active") {
+                await transaction.workout.updateMany({
+                    where: { userId, status: "active", id: { not: id } },
+                    data: { status: "completed", finishedAt: new Date() }
+                });
+            }
+
+            if (existing) {
+                await transaction.workoutExercise.deleteMany({ where: { workoutId: id } });
+                await transaction.cardioSession.deleteMany({ where: { workoutId: id } });
+                await transaction.workout.update({ where: { id }, data: scalar });
+            } else {
+                await transaction.workout.create({ data: { id, userId, ...scalar } });
+            }
+
+            for (const [index, exercise] of exercises.entries()) {
+                await transaction.workoutExercise.create({
+                    data: {
+                        workoutId: id,
+                        exerciseId: exercise.exerciseId,
+                        order: exercise.order ?? index + 1,
+                        notes: exercise.notes ?? null,
+                        sets: {
+                            create: (exercise.sets || []).map((set) => ({
+                                type: (set.type || "working") as WorkoutSetType,
+                                weight: Number(set.weight) || 0,
+                                repetitions: Number(set.repetitions) || 0,
+                                rpe: set.rpe === undefined || set.rpe === null ? null : Number(set.rpe),
+                                restSeconds: set.restSeconds ?? 90,
+                                isCompleted: Boolean(set.isCompleted),
+                                notes: set.notes ?? null
+                            }))
+                        }
+                    }
+                });
+            }
+
+            for (const cardio of dto.cardioSessions || []) {
+                await transaction.cardioSession.create({
+                    data: {
+                        workoutId: id,
+                        type: cardio.type || "treadmill",
+                        durationMinutes: Number(cardio.durationMinutes) || 0,
+                        distance: cardio.distance === undefined || cardio.distance === null ? null : Number(cardio.distance),
+                        calories: cardio.calories === undefined || cardio.calories === null ? null : Number(cardio.calories),
+                        averageHeartRate: cardio.averageHeartRate === undefined || cardio.averageHeartRate === null ? null : Number(cardio.averageHeartRate),
+                        intensity: cardio.intensity ?? null,
+                        notes: cardio.notes ?? null
+                    }
+                });
+            }
+        });
+
+        return this.findOne(id);
+    }
+
+    private deriveTimings(status: string, existing: { startedAt: Date | null; finishedAt: Date | null } | null) {
+        const now = new Date();
+        if (status === "active") {
+            return { startedAt: existing?.startedAt ?? now, finishedAt: null };
+        }
+        if (status === "completed") {
+            return { startedAt: existing?.startedAt ?? now, finishedAt: existing?.finishedAt ?? now };
+        }
+        return { startedAt: existing?.startedAt ?? null, finishedAt: null };
     }
 
     async update(userId: string, id: string, dto: UpdateWorkoutDto) {

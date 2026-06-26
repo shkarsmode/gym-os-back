@@ -397,7 +397,9 @@ async function importBodyweightEntries(transaction: any, userId: string, bodywei
 
 async function importWorkouts(transaction: any, userId: string, workouts: any[]) {
     for (const workout of workouts) {
-        await transaction.workout.deleteMany({ where: { id: workout.id, userId } });
+        // Delete by id alone (ids are globally unique) so a leftover row from a
+        // previous/overlapping import never triggers a unique-constraint failure on create.
+        await transaction.workout.deleteMany({ where: { id: workout.id } });
         await transaction.workout.create({
             data: {
                 id: workout.id,

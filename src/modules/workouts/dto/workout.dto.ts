@@ -189,3 +189,33 @@ export class ImportWorkoutExerciseDto extends AddWorkoutExerciseDto {
     @Type(() => CreateWorkoutSetDto)
     sets?: CreateWorkoutSetDto[];
 }
+
+export class SaveWorkoutDto {
+    @IsDateString()
+    date!: string;
+
+    @IsString()
+    title!: string;
+
+    @IsIn(["planned", "active", "completed"])
+    status!: "planned" | "active" | "completed";
+
+    @IsString()
+    workoutType!: string;
+
+    @IsOptional()
+    @IsString()
+    notes?: string;
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => ImportWorkoutExerciseDto)
+    exercises?: ImportWorkoutExerciseDto[];
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => CreateCardioSessionDto)
+    cardioSessions?: CreateCardioSessionDto[];
+}
