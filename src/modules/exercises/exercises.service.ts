@@ -42,7 +42,7 @@ export class ExercisesService {
     constructor(private readonly prisma: PrismaService) {}
 
     async findAll() {
-        await this.ensureCuratedCatalogWhenEmpty();
+        await this.ensureCuratedCatalogAvailable();
         return this.prisma.exercise.findMany({ orderBy: { name: "asc" } });
     }
 
@@ -164,7 +164,7 @@ export class ExercisesService {
         };
     }
 
-    private async ensureCuratedCatalogWhenEmpty() {
+    private async ensureCuratedCatalogAvailable() {
         const existing = await this.prisma.exercise.findMany({
             where: { slug: { in: curatedExercises.map((exercise) => exercise.slug) } },
             select: { slug: true }
