@@ -118,11 +118,39 @@ export class WorkoutsService {
             }));
         }
         if (existing) {
-            operations.push(this.prisma.workoutExercise.deleteMany({ where: { workoutId: id } }));
-            operations.push(this.prisma.cardioSession.deleteMany({ where: { workoutId: id } }));
+            operations.push(this.prisma.workoutSet.deleteMany({
+                where: {
+                    workoutExercise: {
+                        workoutId: id
+                    }
+                }
+            }));
+
+            operations.push(this.prisma.workoutExercise.deleteMany({
+                where: {
+                    workoutId: id
+                }
+            }));
+
+            operations.push(this.prisma.cardioSession.deleteMany({
+                where: {
+                    workoutId: id
+                }
+            }));
+
             operations.push(this.prisma.workout.update({
-                where: { id },
-                data: { ...scalar, exercises: { create: exercisesCreate }, cardioSessions: { create: cardioCreate } }
+                where: {
+                    id
+                },
+                data: {
+                    ...scalar,
+                    exercises: {
+                        create: exercisesCreate
+                    },
+                    cardioSessions: {
+                        create: cardioCreate
+                    }
+                }
             }));
         } else {
             operations.push(this.prisma.workout.create({
