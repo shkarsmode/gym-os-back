@@ -29,6 +29,11 @@ export class WorkoutsController {
         return this.workoutsService.saveFull(user.id, id, dto);
     }
 
+    @Post(":id/save")
+    saveViaPost(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: SaveWorkoutDto) {
+        return this.workoutsService.saveFull(user.id, id, dto);
+    }
+
     @Patch(":id")
     update(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: UpdateWorkoutDto) {
         return this.workoutsService.update(user.id, id, dto);
