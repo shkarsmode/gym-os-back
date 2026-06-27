@@ -36,7 +36,10 @@ export class ImportExportService {
                 avatarColor: colorFor(item.id),
                 avatarUrl: item.avatarUrl || "",
                 email: requesterIsAdmin ? (item.email || "") : "",
-                approved: item.approved ?? false,
+                // Only admins (who run the approval queue) see real approval state;
+                // for everyone else peers always read as approved so we don't leak
+                // who is still pending.
+                approved: requesterIsAdmin ? (item.approved ?? false) : true,
                 height: item.profile?.height || 0,
                 bodyweight: numberValue(item.profile?.bodyweight, 0),
                 birthYear: 2000,

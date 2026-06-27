@@ -11,11 +11,13 @@ export class UsersController {
     constructor(private readonly usersService: UsersService) {}
 
     @Get()
+    @UseGuards(JwtAuthGuard, ApprovedGuard)
     findAll() {
         return this.usersService.findAll();
     }
 
     @Get(":id")
+    @UseGuards(JwtAuthGuard, ApprovedGuard)
     findOne(@Param("id") id: string) {
         return this.usersService.findOne(id);
     }

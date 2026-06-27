@@ -26,7 +26,7 @@ export class ExercisesController {
     }
 
     @Post("reset-curated")
-    @UseGuards(JwtAuthGuard)
+    @UseGuards(JwtAuthGuard, ApprovedGuard)
     resetCurated(@CurrentUser() user: RequestUser) {
         return this.exercisesService.resetCuratedCatalog(user);
     }
