@@ -1,13 +1,15 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
+import { ApprovedGuard } from "../../shared/approved.guard";
+import { isAdminUser } from "../../shared/admin";
 import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 import { WorkoutsService } from "./workouts.service";
 
 // API uses GET + POST only (no PUT/PATCH/DELETE): some networks/proxies and the
 // browser preflight behaved badly on the other verbs, so every mutation is a POST.
 @Controller("workouts")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ApprovedGuard)
 export class WorkoutsController {
     constructor(private readonly workoutsService: WorkoutsService) {}
 
@@ -28,7 +30,7 @@ export class WorkoutsController {
 
     @Post(":id/save")
     save(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: SaveWorkoutDto) {
-        return this.workoutsService.saveFull(user.id, id, dto);
+        return this.workoutsService.saveFull(user.id, id, dto, isAdminUser(user));
     }
 
     @Post(":id/update")
@@ -38,7 +40,7 @@ export class WorkoutsController {
 
     @Post(":id/delete")
     remove(@CurrentUser() user: RequestUser, @Param("id") id: string) {
-        return this.workoutsService.remove(user.id, id);
+        return this.workoutsService.remove(user.id, id, isAdminUser(user));
     }
 
     @Post(":id/start")

@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
+import { ApprovedGuard } from "../../shared/approved.guard";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { ImportExportService } from "./import-export.service";
 
 @Controller()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ApprovedGuard)
 export class ImportExportController {
     constructor(private readonly importExportService: ImportExportService) {}
 

@@ -27,6 +27,7 @@ model User {
     googleId           String?                   @unique
     displayName        String
     avatarUrl          String?
+    approved           Boolean                   @default(false)
     createdAt          DateTime                  @default(now())
     updatedAt          DateTime                  @updatedAt
     oauthAccounts      OAuthAccount[]

@@ -1,10 +1,20 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { isAdminUser } from "../../shared/admin";
+import { RequestUser } from "../../shared/current-user.decorator";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 
 @Injectable()
 export class UsersService {
     constructor(private readonly prisma: PrismaService) {}
+
+    async setApproval(actor: RequestUser, targetId: string, approved: boolean) {
+        if (!isAdminUser(actor)) {
+            throw new ForbiddenException("Admin access required");
+        }
+        await this.prisma.user.update({ where: { id: targetId }, data: { approved } });
+        return { ok: true, id: targetId, approved };
+    }
 
     findAll() {
         return this.prisma.user.findMany({

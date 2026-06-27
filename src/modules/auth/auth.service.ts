@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Response, Request } from "express";
 import { PrismaService } from "../../prisma/prisma.service";
+import { isAdminUser } from "../../shared/admin";
 
 type GoogleUser = {
     googleId: string;
@@ -46,6 +47,8 @@ export class AuthService {
                 googleId: profile.googleId,
                 displayName: profile.displayName,
                 avatarUrl: profile.avatarUrl || undefined,
+                // New accounts wait for admin approval; admins are auto-approved.
+                approved: isAdminUser({ email: profile.email }),
                 profile: {
                     create: {
                         name: profile.displayName,

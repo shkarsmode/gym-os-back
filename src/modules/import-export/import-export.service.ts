@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable } from "@nestjs/common";
 import { WorkoutSetType, WorkoutStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
+import { isAdminUser } from "../../shared/admin";
 import { duplicateKeys, normalizeExerciseCatalogPayload } from "./exercise-catalog-importer";
 
 @Injectable()
@@ -9,6 +10,7 @@ export class ImportExportService {
     constructor(private readonly prisma: PrismaService) {}
 
     async export(user: RequestUser) {
+        const requesterIsAdmin = isAdminUser(user);
         const [users, exercises, bodyweightEntries, workouts, strengthStandards] = await Promise.all([
             this.prisma.user.findMany({ include: { profile: true }, orderBy: { createdAt: "asc" } }),
             this.prisma.exercise.findMany({ orderBy: { name: "asc" } }),
@@ -33,6 +35,8 @@ export class ImportExportService {
                 avatarInitials: initials(item.profile?.displayName || item.displayName),
                 avatarColor: colorFor(item.id),
                 avatarUrl: item.avatarUrl || "",
+                email: requesterIsAdmin ? (item.email || "") : "",
+                approved: item.approved ?? false,
                 height: item.profile?.height || 0,
                 bodyweight: numberValue(item.profile?.bodyweight, 0),
                 birthYear: 2000,

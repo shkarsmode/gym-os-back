@@ -1,11 +1,12 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
+import { ApprovedGuard } from "../../shared/approved.guard";
 import { CreateBodyweightDto } from "./dto/create-bodyweight.dto";
 import { BodyweightService } from "./bodyweight.service";
 
 @Controller("users/me/bodyweight")
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ApprovedGuard)
 export class BodyweightController {
     constructor(private readonly bodyweightService: BodyweightService) {}
 

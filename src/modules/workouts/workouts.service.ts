@@ -51,14 +51,16 @@ export class WorkoutsService {
     // Atomic full upsert of a single workout (scalars + nested exercises/sets/cardio).
     // Replaces the fragile "wipe-everything-then-reimport" save: a failure here rolls
     // back the whole transaction, so a single workout can never be left half-deleted.
-    async saveFull(userId: string, id: string, dto: SaveWorkoutDto) {
+    async saveFull(userId: string, id: string, dto: SaveWorkoutDto, isAdmin = false) {
         const existing = await this.prisma.workout.findUnique({
             where: { id },
             select: { id: true, userId: true, startedAt: true, finishedAt: true }
         });
-        if (existing && existing.userId !== userId) {
+        if (existing && existing.userId !== userId && !isAdmin) {
             throw new ForbiddenException("Cannot edit another user's workout");
         }
+        // When an admin edits someone else's workout, keep it owned by the original user.
+        const ownerId = existing ? existing.userId : userId;
 
         const requestedExercises = dto.exercises || [];
         const exerciseIds = [...new Set(requestedExercises.map((item) => item.exerciseId).filter(Boolean))];
@@ -113,7 +115,7 @@ export class WorkoutsService {
         const operations: any[] = [];
         if (dto.status === "active") {
             operations.push(this.prisma.workout.updateMany({
-                where: { userId, status: "active", id: { not: id } },
+                where: { userId: ownerId, status: "active", id: { not: id } },
                 data: { status: "completed", finishedAt: new Date() }
             }));
         }
@@ -154,7 +156,7 @@ export class WorkoutsService {
             }));
         } else {
             operations.push(this.prisma.workout.create({
-                data: { id, userId, ...scalar, exercises: { create: exercisesCreate }, cardioSessions: { create: cardioCreate } }
+                data: { id, userId: ownerId, ...scalar, exercises: { create: exercisesCreate }, cardioSessions: { create: cardioCreate } }
             }));
         }
 
@@ -188,8 +190,8 @@ export class WorkoutsService {
         });
     }
 
-    async remove(userId: string, id: string) {
-        await this.assertOwner(userId, id);
+    async remove(userId: string, id: string, isAdmin = false) {
+        await this.assertOwner(userId, id, isAdmin);
         await this.prisma.workout.delete({ where: { id } });
         return { ok: true };
     }
@@ -280,12 +282,12 @@ export class WorkoutsService {
         return { ok: true };
     }
 
-    private async assertOwner(userId: string, workoutId: string) {
+    private async assertOwner(userId: string, workoutId: string, isAdmin = false) {
         const workout = await this.prisma.workout.findUnique({ where: { id: workoutId } });
         if (!workout) {
             throw new NotFoundException("Workout not found");
         }
-        if (workout.userId !== userId) {
+        if (workout.userId !== userId && !isAdmin) {
             throw new ForbiddenException("Cannot edit another user's workout");
         }
         return workout;

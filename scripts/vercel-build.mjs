@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 const rootDirectory = join(dirname(fileURLToPath(import.meta.url)), "..");
 const prismaCliPath = join(rootDirectory, "node_modules", "prisma", "build", "index.js");
 
-if (isEnabled(process.env.GYMOS_AUTO_DB_PUSH)) {
+// Apply additive schema changes (e.g. the new User.approved column) on every deploy.
+// db push is non-destructive for additive changes; if it would lose data it exits
+// non-zero and the deploy fails (keeping the previous good version live) instead of
+// shipping a build whose runtime queries reference a missing column.
+// Set GYMOS_SKIP_DB_PUSH=true to opt out.
+if (!isEnabled(process.env.GYMOS_SKIP_DB_PUSH)) {
     run(process.execPath, [prismaCliPath, "db", "push", "--skip-generate"]);
 }
 
