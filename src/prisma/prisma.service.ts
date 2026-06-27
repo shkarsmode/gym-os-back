@@ -1,6 +1,32 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 
+// Indexes that mirror the @@index() declarations in schema.prisma. Names match
+// Prisma's default convention (<Table>_<cols>_idx) so a future `prisma db push`
+// recognises them as already-present and does not try to recreate them.
+const INDEX_STATEMENTS = [
+    `CREATE INDEX IF NOT EXISTS "OAuthAccount_userId_idx" ON "OAuthAccount" ("userId");`,
+    `CREATE INDEX IF NOT EXISTS "UserBodyweightEntry_userId_idx" ON "UserBodyweightEntry" ("userId");`,
+    `CREATE INDEX IF NOT EXISTS "UserBodyweightEntry_userId_date_idx" ON "UserBodyweightEntry" ("userId", "date");`,
+    `CREATE INDEX IF NOT EXISTS "Exercise_isCustom_idx" ON "Exercise" ("isCustom");`,
+    `CREATE INDEX IF NOT EXISTS "Exercise_createdByUserId_idx" ON "Exercise" ("createdByUserId");`,
+    `CREATE INDEX IF NOT EXISTS "WorkoutExercise_workoutId_idx" ON "WorkoutExercise" ("workoutId");`,
+    `CREATE INDEX IF NOT EXISTS "WorkoutExercise_exerciseId_idx" ON "WorkoutExercise" ("exerciseId");`,
+    `CREATE INDEX IF NOT EXISTS "WorkoutSet_workoutExerciseId_idx" ON "WorkoutSet" ("workoutExerciseId");`,
+    `CREATE INDEX IF NOT EXISTS "CardioSession_workoutId_idx" ON "CardioSession" ("workoutId");`,
+    `CREATE INDEX IF NOT EXISTS "PersonalRecord_userId_idx" ON "PersonalRecord" ("userId");`,
+    `CREATE INDEX IF NOT EXISTS "PersonalRecord_exerciseId_idx" ON "PersonalRecord" ("exerciseId");`,
+    `CREATE INDEX IF NOT EXISTS "PersonalRecord_workoutId_idx" ON "PersonalRecord" ("workoutId");`,
+    `CREATE INDEX IF NOT EXISTS "StrengthStandard_exerciseId_idx" ON "StrengthStandard" ("exerciseId");`,
+    `CREATE INDEX IF NOT EXISTS "WorkoutTemplate_userId_idx" ON "WorkoutTemplate" ("userId");`,
+    `CREATE INDEX IF NOT EXISTS "WorkoutTemplateExercise_workoutTemplateId_idx" ON "WorkoutTemplateExercise" ("workoutTemplateId");`,
+    `CREATE INDEX IF NOT EXISTS "WorkoutTemplateExercise_exerciseId_idx" ON "WorkoutTemplateExercise" ("exerciseId");`,
+    `CREATE INDEX IF NOT EXISTS "Workout_userId_status_idx" ON "Workout" ("userId", "status");`,
+    `CREATE INDEX IF NOT EXISTS "Workout_userId_date_idx" ON "Workout" ("userId", "date");`,
+    // Created LAST so its presence is the marker that the whole index pass finished.
+    `CREATE INDEX IF NOT EXISTS "Workout_userId_idx" ON "Workout" ("userId");`,
+];
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(PrismaService.name);
@@ -17,21 +43,32 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     // Idempotent, additive schema reconciliation for environments where Prisma
     // migrations cannot run DDL through the connection pooler (Neon pgbouncer in
     // transaction mode rejects the advisory locks `prisma db push`/`migrate` need).
-    // Each statement is guarded/idempotent, so this is safe to run on every cold
+    // Every statement is guarded/idempotent, so this is safe to run on every cold
     // start and never blocks boot.
     private async ensureSchema() {
         try {
-            // Add the column if missing. The temporary DEFAULT true backfills the
-            // rows that already exist, so the approval gate only ever applies to
-            // brand-new sign-ups (existing users are grandfathered in).
+            // The `approved` column is cheap to reconcile, so always do it. The
+            // temporary DEFAULT true backfills existing rows (grandfathering) so the
+            // approval gate only ever applies to brand-new sign-ups.
             await this.$executeRawUnsafe(
                 'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "approved" BOOLEAN NOT NULL DEFAULT true;'
             );
-            // Align the live default with the Prisma schema (false) for future
-            // inserts; the app always sets `approved` explicitly on create anyway.
             await this.$executeRawUnsafe(
                 'ALTER TABLE "User" ALTER COLUMN "approved" SET DEFAULT false;'
             );
+
+            // Index creation is 19 round-trips, so gate it behind a single cheap
+            // marker check: once the last index exists, the whole pass is done.
+            const marker = (await this.$queryRawUnsafe(
+                `SELECT to_regclass('public."Workout_userId_idx"') AS reg;`
+            )) as Array<{ reg: string | null }>;
+            if (marker?.[0]?.reg) {
+                return;
+            }
+            for (const statement of INDEX_STATEMENTS) {
+                await this.$executeRawUnsafe(statement);
+            }
+            this.logger.log("ensureSchema: indexes reconciled");
         } catch (error) {
             this.logger.error("ensureSchema failed", error as Error);
         }

@@ -39,6 +39,11 @@ const curatedExercises = [
 
 @Injectable()
 export class ExercisesService {
+    // Once we've confirmed the curated catalog is seeded we don't need to re-run the
+    // lookup on every GET /exercises. Reset on cold start (new instance) and after a
+    // catalog reset, so it self-heals.
+    private curatedReady = false;
+
     constructor(private readonly prisma: PrismaService) {}
 
     async findAll() {
@@ -101,6 +106,8 @@ export class ExercisesService {
 
     async resetCuratedCatalog(user: RequestUser) {
         this.assertCatalogOwner(user);
+        // Force the next GET /exercises to re-verify the curated catalog.
+        this.curatedReady = false;
 
         return this.prisma.$transaction(async (transaction) => {
             const before = await transaction.exercise.count();
@@ -165,6 +172,9 @@ export class ExercisesService {
     }
 
     private async ensureCuratedCatalogAvailable() {
+        if (this.curatedReady) {
+            return;
+        }
         const existing = await this.prisma.exercise.findMany({
             where: { slug: { in: curatedExercises.map((exercise) => exercise.slug) } },
             select: { slug: true }
@@ -173,6 +183,7 @@ export class ExercisesService {
         const missingCuratedExercises = curatedExercises.filter((exercise) => !existingSlugs.has(exercise.slug));
 
         if (!missingCuratedExercises.length) {
+            this.curatedReady = true;
             return;
         }
 
@@ -190,6 +201,7 @@ export class ExercisesService {
             await this.createCuratedTemplates(transaction, curated);
             await this.createCuratedStandards(transaction, curated);
         });
+        this.curatedReady = true;
     }
 
     private async createCuratedTemplates(transaction: Prisma.TransactionClient, curated: Array<{ id: string; slug: string }>) {

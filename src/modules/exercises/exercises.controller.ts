@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Header, Param, Post, UseGuards } from "@nestjs/common";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { ApprovedGuard } from "../../shared/approved.guard";
@@ -9,7 +9,10 @@ import { ExercisesService } from "./exercises.service";
 export class ExercisesController {
     constructor(private readonly exercisesService: ExercisesService) {}
 
+    // The catalog is shared (not per-user) and changes rarely, so let browsers reuse
+    // it for a few minutes instead of refetching the full list on every navigation.
     @Get()
+    @Header("Cache-Control", "public, max-age=300")
     findAll() {
         return this.exercisesService.findAll();
     }
