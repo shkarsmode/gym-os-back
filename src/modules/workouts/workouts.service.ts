@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { WorkoutSetType, WorkoutStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { parseDateInput } from "../../shared/parse-date";
+import { assertWorkoutQuota as enforceWorkoutQuota } from "../../shared/workout-quota";
 import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 
 @Injectable()
@@ -31,12 +32,16 @@ export class WorkoutsService {
         return workout;
     }
 
-    create(userId: string, dto: CreateWorkoutDto) {
+    async create(userId: string, dto: CreateWorkoutDto, isAdmin = false) {
+        const date = parseDateInput(dto.date);
+        if (!isAdmin) {
+            await enforceWorkoutQuota(this.prisma, userId, date);
+        }
         const now = new Date();
         return this.prisma.workout.create({
             data: {
                 userId,
-                date: parseDateInput(dto.date),
+                date,
                 title: dto.title,
                 status: dto.status || "planned",
                 workoutType: dto.workoutType,
@@ -61,6 +66,12 @@ export class WorkoutsService {
         }
         // When an admin edits someone else's workout, keep it owned by the original user.
         const ownerId = existing ? existing.userId : userId;
+
+        // Free-tier quota only applies when CREATING a new workout (not on the many
+        // autosaves of an existing one). Admins are unlimited.
+        if (!existing && !isAdmin) {
+            await enforceWorkoutQuota(this.prisma, userId, parseDateInput(dto.date));
+        }
 
         const requestedExercises = dto.exercises || [];
         const exerciseIds = [...new Set(requestedExercises.map((item) => item.exerciseId).filter(Boolean))];

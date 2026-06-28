@@ -25,7 +25,7 @@ export class WorkoutsController {
 
     @Post()
     create(@CurrentUser() user: RequestUser, @Body() dto: CreateWorkoutDto) {
-        return this.workoutsService.create(user.id, dto);
+        return this.workoutsService.create(user.id, dto, isAdminUser(user));
     }
 
     @Post(":id/save")

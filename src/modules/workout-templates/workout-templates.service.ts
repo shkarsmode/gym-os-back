@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { assertWorkoutQuota } from "../../shared/workout-quota";
 
 @Injectable()
 export class WorkoutTemplatesService {
@@ -13,13 +14,16 @@ export class WorkoutTemplatesService {
         });
     }
 
-    async createWorkout(userId: string, templateId: string) {
+    async createWorkout(userId: string, templateId: string, isAdmin = false) {
         const template = await this.prisma.workoutTemplate.findUnique({
             where: { id: templateId },
             include: { exercises: { orderBy: { order: "asc" } } }
         });
         if (!template) {
             throw new NotFoundException("Workout template not found");
+        }
+        if (!isAdmin) {
+            await assertWorkoutQuota(this.prisma, userId, new Date());
         }
 
         return this.prisma.workout.create({

@@ -17,6 +17,13 @@ export class ExercisesController {
         return this.exercisesService.findAll();
     }
 
+    // Declared before ":id" so "pending" is not swallowed by the param route.
+    @Get("pending")
+    @UseGuards(JwtAuthGuard, ApprovedGuard)
+    pending(@CurrentUser() user: RequestUser) {
+        return this.exercisesService.findPending(user);
+    }
+
     @Get(":id")
     findOne(@Param("id") id: string) {
         return this.exercisesService.findOne(id);
@@ -25,7 +32,19 @@ export class ExercisesController {
     @Post()
     @UseGuards(JwtAuthGuard, ApprovedGuard)
     create(@CurrentUser() user: RequestUser, @Body() dto: CreateExerciseDto) {
-        return this.exercisesService.create(user.id, dto);
+        return this.exercisesService.create(user, dto);
+    }
+
+    @Post(":id/approve")
+    @UseGuards(JwtAuthGuard, ApprovedGuard)
+    approve(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+        return this.exercisesService.approve(user, id);
+    }
+
+    @Post(":id/reject")
+    @UseGuards(JwtAuthGuard, ApprovedGuard)
+    reject(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+        return this.exercisesService.reject(user, id);
     }
 
     @Post("reset-curated")
@@ -37,12 +56,12 @@ export class ExercisesController {
     @Post(":id/update")
     @UseGuards(JwtAuthGuard, ApprovedGuard)
     update(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: UpdateExerciseDto) {
-        return this.exercisesService.update(user.id, id, dto);
+        return this.exercisesService.update(user, id, dto);
     }
 
     @Post(":id/delete")
     @UseGuards(JwtAuthGuard, ApprovedGuard)
     remove(@CurrentUser() user: RequestUser, @Param("id") id: string) {
-        return this.exercisesService.remove(user.id, id);
+        return this.exercisesService.remove(user, id);
     }
 }

@@ -109,6 +109,7 @@ model Exercise {
     mediaReferences       Json                      @default("[]")
     sourceImportedAt      DateTime?
     isCustom              Boolean                   @default(false)
+    status                String                    @default("approved")
     createdByUserId       String?
     createdAt             DateTime                  @default(now())
     updatedAt             DateTime                  @updatedAt
@@ -120,6 +121,7 @@ model Exercise {
 
     @@index([isCustom])
     @@index([createdByUserId])
+    @@index([status])
 }
 
 model Workout {

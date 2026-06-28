@@ -72,6 +72,7 @@ export class ImportExportService {
                 licenseStatus: item.licenseStatus,
                 mediaReferences: item.mediaReferences,
                 isCustom: item.isCustom,
+                status: item.status,
                 createdByUserId: item.createdByUserId,
                 createdAt: item.createdAt.toISOString(),
                 updatedAt: item.updatedAt.toISOString()

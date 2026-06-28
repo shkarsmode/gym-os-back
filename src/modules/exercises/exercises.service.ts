@@ -2,6 +2,7 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { Exercise, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
+import { isAdminUser } from "../../shared/admin";
 import { CreateExerciseDto, UpdateExerciseDto } from "./dto/exercise.dto";
 
 const curatedExercises = [
@@ -59,7 +60,10 @@ export class ExercisesService {
         return exercise;
     }
 
-    create(userId: string, dto: CreateExerciseDto) {
+    create(user: RequestUser, dto: CreateExerciseDto) {
+        // Admins (zshkarrr@gmail.com et al.) publish instantly; everyone else lands
+        // in the moderation queue until an admin approves.
+        const status = isAdminUser(user) ? "approved" : "pending";
         return this.prisma.exercise.create({
             data: {
                 slug: this.slugify(dto.name),
@@ -70,16 +74,22 @@ export class ExercisesService {
                 commonMistakes: dto.commonMistakes || [],
                 safetyTips: dto.safetyTips || [],
                 isCustom: true,
-                createdByUserId: userId
+                status,
+                createdByUserId: user.id
             }
         });
     }
 
-    async update(userId: string, id: string, dto: UpdateExerciseDto) {
+    async update(user: RequestUser, id: string, dto: UpdateExerciseDto) {
         const exercise = await this.findOne(id);
-        if (exercise.createdByUserId && exercise.createdByUserId !== userId) {
-            throw new ForbiddenException("Cannot edit another user's custom exercise");
+        const admin = isAdminUser(user);
+        if (!admin && exercise.createdByUserId && exercise.createdByUserId !== user.id) {
+            throw new ForbiddenException("Cannot edit another user's exercise");
         }
+
+        // Admin edits stay approved; a regular owner editing their exercise sends it
+        // back to the moderation queue.
+        const status = admin ? "approved" : "pending";
 
         return this.prisma.exercise.update({
             where: { id },
@@ -89,19 +99,48 @@ export class ExercisesService {
                 secondaryMuscleGroups: dto.secondaryMuscleGroups,
                 techniqueSteps: dto.techniqueSteps,
                 commonMistakes: dto.commonMistakes,
-                safetyTips: dto.safetyTips
+                safetyTips: dto.safetyTips,
+                status
             }
         });
     }
 
-    async remove(userId: string, id: string) {
+    async remove(user: RequestUser, id: string) {
         const exercise = await this.findOne(id);
-        if (!exercise.isCustom || exercise.createdByUserId !== userId) {
-            throw new ForbiddenException("Only the owner can delete a custom exercise");
+        const admin = isAdminUser(user);
+        if (!admin && exercise.createdByUserId !== user.id) {
+            throw new ForbiddenException("Only the owner or an admin can delete this exercise");
         }
 
         await this.prisma.exercise.delete({ where: { id } });
         return { ok: true };
+    }
+
+    async findPending(user: RequestUser) {
+        this.assertAdmin(user);
+        return this.prisma.exercise.findMany({
+            where: { status: "pending" },
+            orderBy: { updatedAt: "desc" }
+        });
+    }
+
+    async approve(user: RequestUser, id: string) {
+        this.assertAdmin(user);
+        await this.findOne(id);
+        return this.prisma.exercise.update({ where: { id }, data: { status: "approved" } });
+    }
+
+    async reject(user: RequestUser, id: string) {
+        this.assertAdmin(user);
+        await this.findOne(id);
+        await this.prisma.exercise.delete({ where: { id } });
+        return { ok: true };
+    }
+
+    private assertAdmin(user: RequestUser) {
+        if (!isAdminUser(user)) {
+            throw new ForbiddenException("Admin access required");
+        }
     }
 
     async resetCuratedCatalog(user: RequestUser) {
