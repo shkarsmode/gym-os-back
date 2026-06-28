@@ -11,7 +11,10 @@ export class ImportExportService {
 
     async export(user: RequestUser) {
         const requesterIsAdmin = isAdminUser(user);
-        const [users, exercises, bodyweightEntries, workouts, strengthStandards] = await Promise.all([
+        // strengthStandards intentionally not exported anymore — the demo standards
+        // are dropped from the payload; the frontend links to real external
+        // strength-standard references instead.
+        const [users, exercises, bodyweightEntries, workouts] = await Promise.all([
             this.prisma.user.findMany({ include: { profile: true }, orderBy: { createdAt: "asc" } }),
             this.prisma.exercise.findMany({ orderBy: { name: "asc" } }),
             this.prisma.userBodyweightEntry.findMany({ orderBy: { date: "asc" } }),
@@ -21,8 +24,7 @@ export class ImportExportService {
                     cardioSessions: true
                 },
                 orderBy: { date: "desc" }
-            }),
-            this.prisma.strengthStandard.findMany()
+            })
         ]);
 
         return {
@@ -120,20 +122,6 @@ export class ImportExportService {
                     intensity: session.intensity || "medium",
                     notes: session.notes || ""
                 }))
-            })),
-            strengthStandards: strengthStandards.map((item) => ({
-                id: item.id,
-                exerciseId: item.exerciseId,
-                gender: item.gender,
-                bodyweightMin: numberValue(item.bodyweightMin, 0),
-                bodyweightMax: numberValue(item.bodyweightMax, 0),
-                level: item.level,
-                requiredWeight: numberValue(item.requiredWeight, 0),
-                repetitions: item.repetitions,
-                sourceName: item.sourceName,
-                sourceNote: item.sourceNote || "",
-                isOfficial: item.isOfficial,
-                updatedAt: item.updatedAt.toISOString()
             })),
             exportedAt: new Date().toISOString()
         };
