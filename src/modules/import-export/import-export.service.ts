@@ -42,6 +42,7 @@ export class ImportExportService {
                 // for everyone else peers always read as approved so we don't leak
                 // who is still pending.
                 approved: requesterIsAdmin ? (item.approved ?? false) : true,
+                role: item.role || "free",
                 height: item.profile?.height || 0,
                 bodyweight: numberValue(item.profile?.bodyweight, 0),
                 birthYear: 2000,

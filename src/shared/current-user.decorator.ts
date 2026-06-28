@@ -5,6 +5,7 @@ export type RequestUser = {
     email: string;
     displayName: string;
     approved?: boolean;
+    role?: string;
 };
 
 export const CurrentUser = createParamDecorator((_: unknown, context: ExecutionContext): RequestUser | null => {

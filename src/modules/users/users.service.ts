@@ -1,8 +1,10 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { isAdminUser } from "../../shared/admin";
+import { isAdminUser, isSuperAdminUser } from "../../shared/admin";
 import { RequestUser } from "../../shared/current-user.decorator";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
+
+const ALLOWED_ROLES = ["free", "premium", "admin"];
 
 @Injectable()
 export class UsersService {
@@ -14,6 +16,28 @@ export class UsersService {
         }
         await this.prisma.user.update({ where: { id: targetId }, data: { approved } });
         return { ok: true, id: targetId, approved };
+    }
+
+    async setRole(actor: RequestUser, targetId: string, role: string) {
+        if (!isAdminUser(actor)) {
+            throw new ForbiddenException("Admin access required");
+        }
+        const next = String(role || "").toLowerCase();
+        if (!ALLOWED_ROLES.includes(next)) {
+            throw new BadRequestException("Invalid role");
+        }
+        const target = await this.prisma.user.findUnique({ where: { id: targetId }, select: { email: true } });
+        if (!target) {
+            throw new NotFoundException("User not found");
+        }
+        // The email-based super-admin can never be demoted via the panel.
+        if (isSuperAdminUser({ email: target.email }) && next !== "admin") {
+            throw new ForbiddenException("Cannot change the super-admin role");
+        }
+        // Promoting to a role should also unblock the account.
+        const approved = next === "admin" || next === "premium" ? true : undefined;
+        await this.prisma.user.update({ where: { id: targetId }, data: { role: next, ...(approved ? { approved } : {}) } });
+        return { ok: true, id: targetId, role: next };
     }
 
     findAll() {

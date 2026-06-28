@@ -18,16 +18,17 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
     }
 
     async validate(payload: { sub: string; email: string; displayName: string }) {
-        // Read the fresh approval flag so admin approval takes effect without re-login.
+        // Read the fresh approval flag + role so admin changes take effect without re-login.
         const dbUser = await this.prisma.user.findUnique({
             where: { id: payload.sub },
-            select: { approved: true }
+            select: { approved: true, role: true }
         });
         return {
             id: payload.sub,
             email: payload.email,
             displayName: payload.displayName,
-            approved: dbUser?.approved ?? false
+            approved: dbUser?.approved ?? false,
+            role: dbUser?.role ?? "free"
         };
     }
 }

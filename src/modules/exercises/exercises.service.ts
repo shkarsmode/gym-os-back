@@ -2,7 +2,8 @@ import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/commo
 import { Exercise, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
-import { isAdminUser } from "../../shared/admin";
+import { isAdminUser, hasUnlimitedQuota } from "../../shared/admin";
+import { assertExerciseQuota } from "../../shared/exercise-quota";
 import { CreateExerciseDto, UpdateExerciseDto } from "./dto/exercise.dto";
 
 const curatedExercises = [
@@ -60,7 +61,11 @@ export class ExercisesService {
         return exercise;
     }
 
-    create(user: RequestUser, dto: CreateExerciseDto) {
+    async create(user: RequestUser, dto: CreateExerciseDto) {
+        // Free tier: 1 custom exercise per month; admins & premium are unlimited.
+        if (!hasUnlimitedQuota(user)) {
+            await assertExerciseQuota(this.prisma, user.id);
+        }
         // Admins (zshkarrr@gmail.com et al.) publish instantly; everyone else lands
         // in the moderation queue until an admin approves.
         const status = isAdminUser(user) ? "approved" : "pending";
@@ -112,7 +117,17 @@ export class ExercisesService {
             throw new ForbiddenException("Only the owner or an admin can delete this exercise");
         }
 
-        await this.prisma.exercise.delete({ where: { id } });
+        // The exercise is referenced by workout entries and templates with
+        // onDelete: Restrict, so an in-use exercise would otherwise throw an FK error
+        // (500). Remove the dependents first (sets cascade from workoutExercise;
+        // personal records & strength standards cascade from the exercise). Batch-array
+        // $transaction keeps it pooler-safe.
+        await this.prisma.$transaction([
+            this.prisma.workoutSet.deleteMany({ where: { workoutExercise: { exerciseId: id } } }),
+            this.prisma.workoutExercise.deleteMany({ where: { exerciseId: id } }),
+            this.prisma.workoutTemplateExercise.deleteMany({ where: { exerciseId: id } }),
+            this.prisma.exercise.delete({ where: { id } })
+        ]);
         return { ok: true };
     }
 

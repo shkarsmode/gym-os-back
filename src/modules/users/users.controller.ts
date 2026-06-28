@@ -4,6 +4,7 @@ import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { ApprovedGuard } from "../../shared/approved.guard";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
 import { SetApprovalDto } from "./dto/set-approval.dto";
+import { SetRoleDto } from "./dto/set-role.dto";
 import { UsersService } from "./users.service";
 
 @Controller("users")
@@ -33,5 +34,12 @@ export class UsersController {
     @UseGuards(JwtAuthGuard)
     setApproval(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: SetApprovalDto) {
         return this.usersService.setApproval(user, id, dto.approved);
+    }
+
+    // Admin-only: change a user's access level (free | premium | admin).
+    @Post(":id/role")
+    @UseGuards(JwtAuthGuard)
+    setRole(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: SetRoleDto) {
+        return this.usersService.setRole(user, id, dto.role);
     }
 }

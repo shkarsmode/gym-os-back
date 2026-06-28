@@ -14,7 +14,7 @@ export class WorkoutTemplatesService {
         });
     }
 
-    async createWorkout(userId: string, templateId: string, isAdmin = false) {
+    async createWorkout(userId: string, templateId: string, unlimited = false) {
         const template = await this.prisma.workoutTemplate.findUnique({
             where: { id: templateId },
             include: { exercises: { orderBy: { order: "asc" } } }
@@ -22,7 +22,7 @@ export class WorkoutTemplatesService {
         if (!template) {
             throw new NotFoundException("Workout template not found");
         }
-        if (!isAdmin) {
+        if (!unlimited) {
             await assertWorkoutQuota(this.prisma, userId, new Date());
         }
 
