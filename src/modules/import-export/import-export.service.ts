@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable } from "@nestjs/common";
 import { WorkoutSetType, WorkoutStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
-import { isAdminUser } from "../../shared/admin";
+import { isAdminUser, isSuperAdminUser } from "../../shared/admin";
 import { duplicateKeys, normalizeExerciseCatalogPayload } from "./exercise-catalog-importer";
 
 @Injectable()
@@ -43,6 +43,7 @@ export class ImportExportService {
                 // who is still pending.
                 approved: requesterIsAdmin ? (item.approved ?? false) : true,
                 role: item.role || "free",
+                isSuperAdmin: isSuperAdminUser(item),
                 height: item.profile?.height || 0,
                 bodyweight: numberValue(item.profile?.bodyweight, 0),
                 birthYear: 2000,
