@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, OnModuleInit } from "@nestjs/common";
 import { Exercise, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
@@ -40,13 +40,47 @@ const curatedExercises = [
 ] as const;
 
 @Injectable()
-export class ExercisesService {
+export class ExercisesService implements OnModuleInit {
     // Once we've confirmed the curated catalog is seeded we don't need to re-run the
     // lookup on every GET /exercises. Reset on cold start (new instance) and after a
     // catalog reset, so it self-heals.
     private curatedReady = false;
+    private reactionTableReady = false;
 
     constructor(private readonly prisma: PrismaService) {}
+
+    async onModuleInit() {
+        await this.ensureReactionTable();
+    }
+
+    // Neon's pooled connection (pgbouncer) can't run `prisma db push`'s session-level
+    // DDL, so the ExerciseReaction table was never created on deploy. Single DDL
+    // statements DO work over the pooler, so create it idempotently here. Best-effort:
+    // the reaction queries are already defensive if this somehow fails.
+    private async ensureReactionTable() {
+        if (this.reactionTableReady) {
+            return;
+        }
+        try {
+            await this.prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "ExerciseReaction" (
+                "id" TEXT NOT NULL,
+                "exerciseId" TEXT NOT NULL,
+                "userId" TEXT NOT NULL,
+                "type" TEXT NOT NULL,
+                "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT "ExerciseReaction_pkey" PRIMARY KEY ("id"),
+                CONSTRAINT "ExerciseReaction_exerciseId_fkey" FOREIGN KEY ("exerciseId") REFERENCES "Exercise"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT "ExerciseReaction_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+            )`);
+            await this.prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "ExerciseReaction_exerciseId_userId_key" ON "ExerciseReaction"("exerciseId", "userId")`);
+            await this.prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ExerciseReaction_exerciseId_idx" ON "ExerciseReaction"("exerciseId")`);
+            await this.prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "ExerciseReaction_userId_idx" ON "ExerciseReaction"("userId")`);
+            this.reactionTableReady = true;
+        } catch (error) {
+            // best-effort — runtime reaction queries degrade gracefully if missing
+        }
+    }
 
     async findAll() {
         await this.ensureCuratedCatalogAvailable();
@@ -105,6 +139,7 @@ export class ExercisesService {
         if (type !== "none" && type !== "like" && type !== "dislike") {
             throw new BadRequestException("Reaction type must be like, dislike or none");
         }
+        await this.ensureReactionTable();
         await this.findOne(id);
         try {
             if (type === "none") {
