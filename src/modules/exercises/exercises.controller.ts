@@ -2,7 +2,7 @@ import { Body, Controller, Get, Header, Param, Post, UseGuards } from "@nestjs/c
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { ApprovedGuard } from "../../shared/approved.guard";
-import { CreateExerciseDto, UpdateExerciseDto } from "./dto/exercise.dto";
+import { CreateExerciseDto, ReactExerciseDto, UpdateExerciseDto } from "./dto/exercise.dto";
 import { ExercisesService } from "./exercises.service";
 
 @Controller("exercises")
@@ -22,6 +22,14 @@ export class ExercisesController {
     @UseGuards(JwtAuthGuard, ApprovedGuard)
     pending(@CurrentUser() user: RequestUser) {
         return this.exercisesService.findPending(user);
+    }
+
+    // The current user's reactions map { exerciseId: "like" | "dislike" }.
+    // Before ":id" so the literal path isn't swallowed by the param route.
+    @Get("my-reactions")
+    @UseGuards(JwtAuthGuard, ApprovedGuard)
+    myReactions(@CurrentUser() user: RequestUser) {
+        return this.exercisesService.getMyReactions(user);
     }
 
     @Get(":id")
@@ -63,5 +71,11 @@ export class ExercisesController {
     @UseGuards(JwtAuthGuard, ApprovedGuard)
     remove(@CurrentUser() user: RequestUser, @Param("id") id: string) {
         return this.exercisesService.remove(user, id);
+    }
+
+    @Post(":id/react")
+    @UseGuards(JwtAuthGuard, ApprovedGuard)
+    react(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: ReactExerciseDto) {
+        return this.exercisesService.react(user, id, dto.type);
     }
 }

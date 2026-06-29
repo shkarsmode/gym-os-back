@@ -39,6 +39,7 @@ model User {
     personalRecords    PersonalRecord[]
     achievements       UserAchievement[]
     workoutTemplates   WorkoutTemplate[]
+    exerciseReactions  ExerciseReaction[]
 }
 
 model OAuthAccount {
@@ -119,10 +120,26 @@ model Exercise {
     personalRecords       PersonalRecord[]
     strengthStandards     StrengthStandard[]
     templateExercises     WorkoutTemplateExercise[]
+    reactions             ExerciseReaction[]
 
     @@index([isCustom])
     @@index([createdByUserId])
     @@index([status])
+}
+
+model ExerciseReaction {
+    id         String   @id @default(cuid())
+    exerciseId String
+    userId     String
+    type       String // "like" | "dislike"
+    createdAt  DateTime @default(now())
+    updatedAt  DateTime @updatedAt
+    exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+    user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@unique([exerciseId, userId])
+    @@index([exerciseId])
+    @@index([userId])
 }
 
 model Workout {

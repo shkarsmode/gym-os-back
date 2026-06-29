@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Exercise, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
@@ -50,7 +50,62 @@ export class ExercisesService {
 
     async findAll() {
         await this.ensureCuratedCatalogAvailable();
-        return this.prisma.exercise.findMany({ orderBy: { name: "asc" } });
+        const [exercises, grouped] = await Promise.all([
+            this.prisma.exercise.findMany({ orderBy: { name: "asc" } }),
+            this.prisma.exerciseReaction.groupBy({ by: ["exerciseId", "type"], _count: { _all: true } })
+        ]);
+        const counts = new Map<string, { likeCount: number; dislikeCount: number }>();
+        for (const row of grouped) {
+            const entry = counts.get(row.exerciseId) || { likeCount: 0, dislikeCount: 0 };
+            if (row.type === "like") {
+                entry.likeCount = row._count._all;
+            } else if (row.type === "dislike") {
+                entry.dislikeCount = row._count._all;
+            }
+            counts.set(row.exerciseId, entry);
+        }
+        return exercises.map((exercise) => ({
+            ...exercise,
+            likeCount: counts.get(exercise.id)?.likeCount || 0,
+            dislikeCount: counts.get(exercise.id)?.dislikeCount || 0
+        }));
+    }
+
+    // Map of { exerciseId: "like" | "dislike" } for the current user (for the UI
+    // state + the liked-first sort). Kept separate from the cached public catalog.
+    async getMyReactions(user: RequestUser) {
+        const rows = await this.prisma.exerciseReaction.findMany({
+            where: { userId: user.id },
+            select: { exerciseId: true, type: true }
+        });
+        const map: Record<string, string> = {};
+        for (const row of rows) {
+            map[row.exerciseId] = row.type;
+        }
+        return map;
+    }
+
+    // Set, change, or clear (type "none") the current user's reaction; returns the
+    // exercise's fresh counts so the client can reconcile its optimistic update.
+    async react(user: RequestUser, id: string, type: string) {
+        await this.findOne(id);
+        if (type === "none" || !type) {
+            await this.prisma.exerciseReaction.deleteMany({ where: { exerciseId: id, userId: user.id } });
+        } else if (type === "like" || type === "dislike") {
+            await this.prisma.exerciseReaction.upsert({
+                where: { exerciseId_userId: { exerciseId: id, userId: user.id } },
+                update: { type },
+                create: { exerciseId: id, userId: user.id, type }
+            });
+        } else {
+            throw new BadRequestException("Reaction type must be like, dislike or none");
+        }
+        const [likeCount, dislikeCount] = await Promise.all([
+            this.prisma.exerciseReaction.count({ where: { exerciseId: id, type: "like" } }),
+            this.prisma.exerciseReaction.count({ where: { exerciseId: id, type: "dislike" } })
+        ]);
+        const myReaction = type === "none" || !type ? null : type;
+        return { id, likeCount, dislikeCount, myReaction };
     }
 
     async findOne(id: string) {

@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsOptional, IsString } from "class-validator";
+import { IsArray, IsBoolean, IsIn, IsOptional, IsString } from "class-validator";
 
 export class CreateExerciseDto {
     @IsString()
@@ -116,4 +116,10 @@ export class UpdateExerciseDto {
     @IsOptional()
     @IsBoolean()
     isCustom?: boolean;
+}
+
+export class ReactExerciseDto {
+    @IsString()
+    @IsIn(["like", "dislike", "none"])
+    type!: "like" | "dislike" | "none";
 }

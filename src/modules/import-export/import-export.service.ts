@@ -14,7 +14,7 @@ export class ImportExportService {
         // strengthStandards intentionally not exported anymore — the demo standards
         // are dropped from the payload; the frontend links to real external
         // strength-standard references instead.
-        const [users, exercises, bodyweightEntries, workouts] = await Promise.all([
+        const [users, exercises, bodyweightEntries, workouts, reactionGroups, myReactions] = await Promise.all([
             this.prisma.user.findMany({ include: { profile: true }, orderBy: { createdAt: "asc" } }),
             this.prisma.exercise.findMany({ orderBy: { name: "asc" } }),
             this.prisma.userBodyweightEntry.findMany({ orderBy: { date: "asc" } }),
@@ -24,8 +24,24 @@ export class ImportExportService {
                     cardioSessions: true
                 },
                 orderBy: { date: "desc" }
-            })
+            }),
+            this.prisma.exerciseReaction.groupBy({ by: ["exerciseId", "type"], _count: { _all: true } }),
+            this.prisma.exerciseReaction.findMany({ where: { userId: user.id }, select: { exerciseId: true, type: true } })
         ]);
+
+        // Shared like/dislike counts + this user's own reaction, merged onto each
+        // exercise so the catalog can show totals and sort liked-first for everyone.
+        const reactionCounts = new Map<string, { likeCount: number; dislikeCount: number }>();
+        for (const group of reactionGroups) {
+            const entry = reactionCounts.get(group.exerciseId) || { likeCount: 0, dislikeCount: 0 };
+            if (group.type === "like") {
+                entry.likeCount = group._count._all;
+            } else if (group.type === "dislike") {
+                entry.dislikeCount = group._count._all;
+            }
+            reactionCounts.set(group.exerciseId, entry);
+        }
+        const myReactionMap = new Map(myReactions.map((row) => [row.exerciseId, row.type]));
 
         return {
             version: 3,
@@ -78,6 +94,9 @@ export class ImportExportService {
                 isCustom: item.isCustom,
                 status: item.status,
                 createdByUserId: item.createdByUserId,
+                likeCount: reactionCounts.get(item.id)?.likeCount || 0,
+                dislikeCount: reactionCounts.get(item.id)?.dislikeCount || 0,
+                myReaction: myReactionMap.get(item.id) || null,
                 createdAt: item.createdAt.toISOString(),
                 updatedAt: item.updatedAt.toISOString()
             })),
