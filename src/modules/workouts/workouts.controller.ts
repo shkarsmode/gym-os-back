@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/co
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { ApprovedGuard } from "../../shared/approved.guard";
-import { isAdminUser, hasUnlimitedQuota } from "../../shared/admin";
+import { isAdminUser, tierOf } from "../../shared/admin";
 import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 import { WorkoutsService } from "./workouts.service";
 
@@ -25,12 +25,12 @@ export class WorkoutsController {
 
     @Post()
     create(@CurrentUser() user: RequestUser, @Body() dto: CreateWorkoutDto) {
-        return this.workoutsService.create(user.id, dto, hasUnlimitedQuota(user));
+        return this.workoutsService.create(user.id, dto, tierOf(user));
     }
 
     @Post(":id/save")
     save(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: SaveWorkoutDto) {
-        return this.workoutsService.saveFull(user.id, id, dto, isAdminUser(user), hasUnlimitedQuota(user));
+        return this.workoutsService.saveFull(user.id, id, dto, isAdminUser(user), tierOf(user));
     }
 
     @Post(":id/update")

@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { HealthController } from "./health.controller";
+import { ThrottleGuard } from "./shared/throttle.guard";
 import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { UsersModule } from "./modules/users/users.module";
@@ -36,6 +38,7 @@ import { FeedbackModule } from "./modules/feedback/feedback.module";
         ImportExportModule,
         FeedbackModule
     ],
-    controllers: [HealthController]
+    controllers: [HealthController],
+    providers: [{ provide: APP_GUARD, useClass: ThrottleGuard }]
 })
 export class AppModule {}

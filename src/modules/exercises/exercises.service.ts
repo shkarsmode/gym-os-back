@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException,
 import { Exercise, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
-import { isAdminUser, hasUnlimitedQuota } from "../../shared/admin";
+import { isAdminUser, tierOf } from "../../shared/admin";
 import { assertExerciseQuota } from "../../shared/exercise-quota";
 import { CreateExerciseDto, UpdateExerciseDto } from "./dto/exercise.dto";
 
@@ -185,10 +185,8 @@ export class ExercisesService implements OnModuleInit {
     }
 
     async create(user: RequestUser, dto: CreateExerciseDto) {
-        // Free tier: 1 custom exercise per month; admins & premium are unlimited.
-        if (!hasUnlimitedQuota(user)) {
-            await assertExerciseQuota(this.prisma, user.id);
-        }
+        // Tiered: free 1/month, PRO up to 30 total, admin unlimited (handled inside).
+        await assertExerciseQuota(this.prisma, user.id, tierOf(user));
         // Admins (zshkarrr@gmail.com et al.) publish instantly; everyone else lands
         // in the moderation queue until an admin approves.
         const status = isAdminUser(user) ? "approved" : "pending";

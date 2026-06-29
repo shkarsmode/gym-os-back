@@ -37,7 +37,23 @@ export function isAdminUser(user: AdminCandidate): boolean {
 }
 
 // Unlimited quota = admins and premium users; free users hit the limits.
+// NOTE: kept for legacy callers. New quota code uses tierOf() — PRO is now bounded
+// (not unlimited), so quota checks must distinguish premium from admin.
 export function hasUnlimitedQuota(user: AdminCandidate): boolean {
     const role = String(user?.role || "").toLowerCase();
     return isAdminUser(user) || role === "premium";
+}
+
+export type QuotaTier = "admin" | "premium" | "free";
+
+// The billing tier that drives per-user quotas. admin = unlimited; premium = PRO
+// (higher but bounded); free = base limits.
+export function tierOf(user: AdminCandidate): QuotaTier {
+    if (isAdminUser(user)) {
+        return "admin";
+    }
+    if (String(user?.role || "").toLowerCase() === "premium") {
+        return "premium";
+    }
+    return "free";
 }

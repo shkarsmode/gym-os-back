@@ -1,7 +1,8 @@
 import { ForbiddenException, Injectable, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
-import { isAdminUser } from "../../shared/admin";
+import { isAdminUser, tierOf } from "../../shared/admin";
+import { assertFeedbackQuota } from "../../shared/feedback-quota";
 import { CreateFeedbackDto } from "./dto/feedback.dto";
 
 @Injectable()
@@ -54,6 +55,7 @@ export class FeedbackService implements OnModuleInit {
 
     async create(user: RequestUser, dto: CreateFeedbackDto) {
         await this.ensureTable();
+        await assertFeedbackQuota(this.prisma, user.id, tierOf(user));
         return this.prisma.featureRequest.create({
             data: {
                 userId: user.id,

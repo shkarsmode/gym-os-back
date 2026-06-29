@@ -1,9 +1,17 @@
 import { ForbiddenException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { QuotaTier } from "./admin";
 
-// Free tier: max 1 workout per day and 2 per ISO week. Admins skip this entirely.
-// Boundaries are computed on the server (UTC) against the date-only workout date.
-export async function assertWorkoutQuota(prisma: PrismaService, userId: string, date: Date) {
+// Per-tier workout limits (admins are unlimited):
+//   free    — 1 workout/day, 2/week
+//   premium — 2 workouts/day (no weekly cap)
+// Boundaries are computed on the server against the date-only workout date.
+export async function assertWorkoutQuota(prisma: PrismaService, userId: string, date: Date, tier: QuotaTier = "free") {
+    if (tier === "admin") {
+        return;
+    }
+    const perDay = tier === "premium" ? 2 : 1;
+
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(startOfDay);
@@ -20,14 +28,17 @@ export async function assertWorkoutQuota(prisma: PrismaService, userId: string, 
         prisma.workout.count({ where: { userId, date: { gte: startOfWeek, lt: endOfWeek } } })
     ]);
 
-    if (dayCount >= 1) {
+    if (dayCount >= perDay) {
         throw new ForbiddenException({
             code: "WORKOUT_LIMIT",
             scope: "day",
-            message: "Денний ліміт безкоштовного тарифу: 1 тренування на день."
+            message: tier === "premium"
+                ? "Тариф PRO: до 2 тренувань на день."
+                : "Денний ліміт безкоштовного тарифу: 1 тренування на день."
         });
     }
-    if (weekCount >= 2) {
+    // Weekly cap is a free-tier guard only.
+    if (tier === "free" && weekCount >= 2) {
         throw new ForbiddenException({
             code: "WORKOUT_LIMIT",
             scope: "week",

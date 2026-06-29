@@ -1,5 +1,13 @@
-import { IsArray, IsBoolean, IsDateString, IsIn, IsNumber, IsOptional, IsString, Min, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsDateString, IsIn, IsNumber, IsOptional, IsString, Max, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
+
+// Sane upper bounds — block garbage/abuse without rejecting real data. Weight is
+// capped generously (leg press / calf raise legitimately exceed 500kg) so no
+// regressions; reps/rpe/rest/cardio get realistic ceilings.
+const MAX_WEIGHT = 2000;
+const MAX_REPS = 1000;
+const MAX_RPE = 10;
+const MAX_REST = 86400;
 
 export class CreateWorkoutDto {
     @IsDateString()
@@ -67,18 +75,24 @@ export class CreateWorkoutSetDto {
 
     @IsNumber()
     @Min(0)
+    @Max(MAX_WEIGHT)
     weight!: number;
 
     @IsNumber()
     @Min(0)
+    @Max(MAX_REPS)
     repetitions!: number;
 
     @IsOptional()
     @IsNumber()
+    @Min(0)
+    @Max(MAX_RPE)
     rpe?: number;
 
     @IsOptional()
     @IsNumber()
+    @Min(0)
+    @Max(MAX_REST)
     restSeconds?: number;
 
     @IsOptional()
@@ -98,19 +112,25 @@ export class UpdateWorkoutSetDto {
     @IsOptional()
     @IsNumber()
     @Min(0)
+    @Max(MAX_WEIGHT)
     weight?: number;
 
     @IsOptional()
     @IsNumber()
     @Min(0)
+    @Max(MAX_REPS)
     repetitions?: number;
 
     @IsOptional()
     @IsNumber()
+    @Min(0)
+    @Max(MAX_RPE)
     rpe?: number;
 
     @IsOptional()
     @IsNumber()
+    @Min(0)
+    @Max(MAX_REST)
     restSeconds?: number;
 
     @IsOptional()

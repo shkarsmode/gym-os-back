@@ -3,6 +3,7 @@ import { WorkoutSetType, WorkoutStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { parseDateInput } from "../../shared/parse-date";
 import { assertWorkoutQuota as enforceWorkoutQuota } from "../../shared/workout-quota";
+import { QuotaTier } from "../../shared/admin";
 import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 
 @Injectable()
@@ -32,11 +33,9 @@ export class WorkoutsService {
         return workout;
     }
 
-    async create(userId: string, dto: CreateWorkoutDto, unlimited = false) {
+    async create(userId: string, dto: CreateWorkoutDto, tier: QuotaTier = "free") {
         const date = parseDateInput(dto.date);
-        if (!unlimited) {
-            await enforceWorkoutQuota(this.prisma, userId, date);
-        }
+        await enforceWorkoutQuota(this.prisma, userId, date, tier);
         const now = new Date();
         return this.prisma.workout.create({
             data: {
@@ -56,7 +55,7 @@ export class WorkoutsService {
     // Atomic full upsert of a single workout (scalars + nested exercises/sets/cardio).
     // Replaces the fragile "wipe-everything-then-reimport" save: a failure here rolls
     // back the whole transaction, so a single workout can never be left half-deleted.
-    async saveFull(userId: string, id: string, dto: SaveWorkoutDto, isAdmin = false, unlimited = false) {
+    async saveFull(userId: string, id: string, dto: SaveWorkoutDto, isAdmin = false, tier: QuotaTier = "free") {
         const existing = await this.prisma.workout.findUnique({
             where: { id },
             select: { id: true, userId: true, startedAt: true, finishedAt: true }
@@ -67,10 +66,10 @@ export class WorkoutsService {
         // When an admin edits someone else's workout, keep it owned by the original user.
         const ownerId = existing ? existing.userId : userId;
 
-        // Free-tier quota only applies when CREATING a new workout (not on the many
-        // autosaves of an existing one). Admins & premium are unlimited.
-        if (!existing && !unlimited) {
-            await enforceWorkoutQuota(this.prisma, userId, parseDateInput(dto.date));
+        // Quota only applies when CREATING a new workout (not on the many autosaves
+        // of an existing one). Admin tier is a no-op inside enforceWorkoutQuota.
+        if (!existing) {
+            await enforceWorkoutQuota(this.prisma, userId, parseDateInput(dto.date), tier);
         }
 
         const requestedExercises = dto.exercises || [];
