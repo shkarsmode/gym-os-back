@@ -14,7 +14,7 @@ export class ImportExportService {
         // strengthStandards intentionally not exported anymore — the demo standards
         // are dropped from the payload; the frontend links to real external
         // strength-standard references instead.
-        const [users, exercises, bodyweightEntries, workouts, reactionGroups, myReactions] = await Promise.all([
+        const [users, exercises, bodyweightEntries, workouts] = await Promise.all([
             this.prisma.user.findMany({ include: { profile: true }, orderBy: { createdAt: "asc" } }),
             this.prisma.exercise.findMany({ orderBy: { name: "asc" } }),
             this.prisma.userBodyweightEntry.findMany({ orderBy: { date: "asc" } }),
@@ -24,24 +24,35 @@ export class ImportExportService {
                     cardioSessions: true
                 },
                 orderBy: { date: "desc" }
-            }),
-            this.prisma.exerciseReaction.groupBy({ by: ["exerciseId", "type"], _count: { _all: true } }),
-            this.prisma.exerciseReaction.findMany({ where: { userId: user.id }, select: { exerciseId: true, type: true } })
+            })
         ]);
 
         // Shared like/dislike counts + this user's own reaction, merged onto each
         // exercise so the catalog can show totals and sort liked-first for everyone.
+        // Degrades to empty if the ExerciseReaction table isn't migrated yet — /export
+        // must never 500 on a missing table.
         const reactionCounts = new Map<string, { likeCount: number; dislikeCount: number }>();
-        for (const group of reactionGroups) {
-            const entry = reactionCounts.get(group.exerciseId) || { likeCount: 0, dislikeCount: 0 };
-            if (group.type === "like") {
-                entry.likeCount = group._count._all;
-            } else if (group.type === "dislike") {
-                entry.dislikeCount = group._count._all;
+        const myReactionMap = new Map<string, string>();
+        try {
+            const [reactionGroups, myReactions] = await Promise.all([
+                this.prisma.exerciseReaction.groupBy({ by: ["exerciseId", "type"], _count: { _all: true } }),
+                this.prisma.exerciseReaction.findMany({ where: { userId: user.id }, select: { exerciseId: true, type: true } })
+            ]);
+            for (const group of reactionGroups) {
+                const entry = reactionCounts.get(group.exerciseId) || { likeCount: 0, dislikeCount: 0 };
+                if (group.type === "like") {
+                    entry.likeCount = group._count._all;
+                } else if (group.type === "dislike") {
+                    entry.dislikeCount = group._count._all;
+                }
+                reactionCounts.set(group.exerciseId, entry);
             }
-            reactionCounts.set(group.exerciseId, entry);
+            for (const row of myReactions) {
+                myReactionMap.set(row.exerciseId, row.type);
+            }
+        } catch (error) {
+            // ExerciseReaction table not migrated yet — export without reactions.
         }
-        const myReactionMap = new Map(myReactions.map((row) => [row.exerciseId, row.type]));
 
         return {
             version: 3,

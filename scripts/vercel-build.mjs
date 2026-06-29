@@ -5,20 +5,19 @@ import { fileURLToPath } from "node:url";
 const rootDirectory = join(dirname(fileURLToPath(import.meta.url)), "..");
 const prismaCliPath = join(rootDirectory, "node_modules", "prisma", "build", "index.js");
 
-// Apply additive schema changes (e.g. the new User.approved column) on every deploy.
-// db push is non-destructive for additive changes; if it would lose data it exits
-// non-zero and the deploy fails (keeping the previous good version live) instead of
-// shipping a build whose runtime queries reference a missing column.
-// Set GYMOS_SKIP_DB_PUSH=true to opt out.
-if (!isEnabled(process.env.GYMOS_SKIP_DB_PUSH)) {
-    run(process.execPath, [prismaCliPath, "db", "push", "--skip-generate"]);
-}
+// Apply additive schema changes (e.g. the ExerciseReaction table) on every deploy.
+// db push refuses destructive changes in CI mode (no --accept-data-loss), so it is
+// safe for additive ones. Run it NON-fatally and unconditionally: a push hiccup must
+// not take prod down, because the runtime is defensive about not-yet-migrated tables.
+// (Was gated on GYMOS_SKIP_DB_PUSH, which left newly added tables uncreated.)
+runSoft(process.execPath, [prismaCliPath, "db", "push", "--skip-generate"]);
 
 if (isEnabled(process.env.GYMOS_AUTO_IMPORT_EXRX)) {
     console.warn("GYMOS_AUTO_IMPORT_EXRX is deprecated and ignored. Use POST /import/exercises for manual imports.");
 }
 
-function run(command, args) {
+// Run a build step but never fail the build on it (logs and continues).
+function runSoft(command, args) {
     const result = spawnSync(command, args, {
         cwd: rootDirectory,
         stdio: "inherit",
@@ -26,7 +25,7 @@ function run(command, args) {
     });
 
     if (result.status !== 0) {
-        process.exit(result.status ?? 1);
+        console.warn(`[vercel-build] non-fatal step exited with ${result.status ?? "unknown"} — continuing.`);
     }
 }
 

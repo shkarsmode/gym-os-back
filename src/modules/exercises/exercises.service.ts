@@ -50,20 +50,8 @@ export class ExercisesService {
 
     async findAll() {
         await this.ensureCuratedCatalogAvailable();
-        const [exercises, grouped] = await Promise.all([
-            this.prisma.exercise.findMany({ orderBy: { name: "asc" } }),
-            this.prisma.exerciseReaction.groupBy({ by: ["exerciseId", "type"], _count: { _all: true } })
-        ]);
-        const counts = new Map<string, { likeCount: number; dislikeCount: number }>();
-        for (const row of grouped) {
-            const entry = counts.get(row.exerciseId) || { likeCount: 0, dislikeCount: 0 };
-            if (row.type === "like") {
-                entry.likeCount = row._count._all;
-            } else if (row.type === "dislike") {
-                entry.dislikeCount = row._count._all;
-            }
-            counts.set(row.exerciseId, entry);
-        }
+        const exercises = await this.prisma.exercise.findMany({ orderBy: { name: "asc" } });
+        const counts = await this.reactionCounts();
         return exercises.map((exercise) => ({
             ...exercise,
             likeCount: counts.get(exercise.id)?.likeCount || 0,
@@ -71,16 +59,42 @@ export class ExercisesService {
         }));
     }
 
+    // Aggregate like/dislike counts per exercise. Degrades to empty if the
+    // ExerciseReaction table isn't there yet (pre-migration) so the catalog and
+    // /export never 500 on a missing table.
+    async reactionCounts() {
+        const counts = new Map<string, { likeCount: number; dislikeCount: number }>();
+        try {
+            const grouped = await this.prisma.exerciseReaction.groupBy({ by: ["exerciseId", "type"], _count: { _all: true } });
+            for (const row of grouped) {
+                const entry = counts.get(row.exerciseId) || { likeCount: 0, dislikeCount: 0 };
+                if (row.type === "like") {
+                    entry.likeCount = row._count._all;
+                } else if (row.type === "dislike") {
+                    entry.dislikeCount = row._count._all;
+                }
+                counts.set(row.exerciseId, entry);
+            }
+        } catch (error) {
+            // table missing / not migrated yet — fall back to no counts
+        }
+        return counts;
+    }
+
     // Map of { exerciseId: "like" | "dislike" } for the current user (for the UI
     // state + the liked-first sort). Kept separate from the cached public catalog.
     async getMyReactions(user: RequestUser) {
-        const rows = await this.prisma.exerciseReaction.findMany({
-            where: { userId: user.id },
-            select: { exerciseId: true, type: true }
-        });
         const map: Record<string, string> = {};
-        for (const row of rows) {
-            map[row.exerciseId] = row.type;
+        try {
+            const rows = await this.prisma.exerciseReaction.findMany({
+                where: { userId: user.id },
+                select: { exerciseId: true, type: true }
+            });
+            for (const row of rows) {
+                map[row.exerciseId] = row.type;
+            }
+        } catch (error) {
+            // table missing / not migrated yet — no reactions
         }
         return map;
     }
@@ -88,37 +102,43 @@ export class ExercisesService {
     // Set, change, or clear (type "none") the current user's reaction; returns the
     // exercise's fresh counts so the client can reconcile its optimistic update.
     async react(user: RequestUser, id: string, type: string) {
-        await this.findOne(id);
-        if (type === "none" || !type) {
-            await this.prisma.exerciseReaction.deleteMany({ where: { exerciseId: id, userId: user.id } });
-        } else if (type === "like" || type === "dislike") {
-            try {
-                await this.prisma.exerciseReaction.upsert({
-                    where: { exerciseId_userId: { exerciseId: id, userId: user.id } },
-                    update: { type },
-                    create: { exerciseId: id, userId: user.id, type }
-                });
-            } catch (error) {
-                // Two concurrent first-time reactions can race the upsert's
-                // read→insert and hit the unique constraint; on conflict just update.
-                if ((error as { code?: string })?.code === "P2002") {
-                    await this.prisma.exerciseReaction.update({
-                        where: { exerciseId_userId: { exerciseId: id, userId: user.id } },
-                        data: { type }
-                    });
-                } else {
-                    throw error;
-                }
-            }
-        } else {
+        if (type !== "none" && type !== "like" && type !== "dislike") {
             throw new BadRequestException("Reaction type must be like, dislike or none");
         }
-        const [likeCount, dislikeCount] = await Promise.all([
-            this.prisma.exerciseReaction.count({ where: { exerciseId: id, type: "like" } }),
-            this.prisma.exerciseReaction.count({ where: { exerciseId: id, type: "dislike" } })
-        ]);
-        const myReaction = type === "none" || !type ? null : type;
-        return { id, likeCount, dislikeCount, myReaction };
+        await this.findOne(id);
+        try {
+            if (type === "none") {
+                await this.prisma.exerciseReaction.deleteMany({ where: { exerciseId: id, userId: user.id } });
+            } else {
+                try {
+                    await this.prisma.exerciseReaction.upsert({
+                        where: { exerciseId_userId: { exerciseId: id, userId: user.id } },
+                        update: { type },
+                        create: { exerciseId: id, userId: user.id, type }
+                    });
+                } catch (error) {
+                    // Two concurrent first-time reactions can race the upsert's
+                    // read→insert and hit the unique constraint; on conflict just update.
+                    if ((error as { code?: string })?.code === "P2002") {
+                        await this.prisma.exerciseReaction.update({
+                            where: { exerciseId_userId: { exerciseId: id, userId: user.id } },
+                            data: { type }
+                        });
+                    } else {
+                        throw error;
+                    }
+                }
+            }
+            const [likeCount, dislikeCount] = await Promise.all([
+                this.prisma.exerciseReaction.count({ where: { exerciseId: id, type: "like" } }),
+                this.prisma.exerciseReaction.count({ where: { exerciseId: id, type: "dislike" } })
+            ]);
+            return { id, likeCount, dislikeCount, myReaction: type === "none" ? null : type };
+        } catch (error) {
+            // Reaction table not migrated yet / transient DB issue — don't 500;
+            // report zeros so the client reverts its optimistic update cleanly.
+            return { id, likeCount: 0, dislikeCount: 0, myReaction: null };
+        }
     }
 
     async findOne(id: string) {
