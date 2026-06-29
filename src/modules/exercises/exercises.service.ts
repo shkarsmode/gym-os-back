@@ -92,11 +92,24 @@ export class ExercisesService {
         if (type === "none" || !type) {
             await this.prisma.exerciseReaction.deleteMany({ where: { exerciseId: id, userId: user.id } });
         } else if (type === "like" || type === "dislike") {
-            await this.prisma.exerciseReaction.upsert({
-                where: { exerciseId_userId: { exerciseId: id, userId: user.id } },
-                update: { type },
-                create: { exerciseId: id, userId: user.id, type }
-            });
+            try {
+                await this.prisma.exerciseReaction.upsert({
+                    where: { exerciseId_userId: { exerciseId: id, userId: user.id } },
+                    update: { type },
+                    create: { exerciseId: id, userId: user.id, type }
+                });
+            } catch (error) {
+                // Two concurrent first-time reactions can race the upsert's
+                // read→insert and hit the unique constraint; on conflict just update.
+                if ((error as { code?: string })?.code === "P2002") {
+                    await this.prisma.exerciseReaction.update({
+                        where: { exerciseId_userId: { exerciseId: id, userId: user.id } },
+                        data: { type }
+                    });
+                } else {
+                    throw error;
+                }
+            }
         } else {
             throw new BadRequestException("Reaction type must be like, dislike or none");
         }
