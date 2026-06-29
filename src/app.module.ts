@@ -15,6 +15,7 @@ import { RankingsModule } from "./modules/rankings/rankings.module";
 import { TeamStatsModule } from "./modules/team-stats/team-stats.module";
 import { StatsModule } from "./modules/stats/stats.module";
 import { ImportExportModule } from "./modules/import-export/import-export.module";
+import { FeedbackModule } from "./modules/feedback/feedback.module";
 
 @Module({
     imports: [
@@ -32,7 +33,8 @@ import { ImportExportModule } from "./modules/import-export/import-export.module
         RankingsModule,
         TeamStatsModule,
         StatsModule,
-        ImportExportModule
+        ImportExportModule,
+        FeedbackModule
     ],
     controllers: [HealthController]
 })

@@ -54,6 +54,15 @@ export class ImportExportService {
             // ExerciseReaction table not migrated yet — export without reactions.
         }
 
+        // Feature-request / feedback board (public). Degrades to [] if the table
+        // isn't created yet so /export can never 500 on a missing table.
+        let featureRequests: Array<{ id: string; userId: string; type: string; title: string; description: string | null; status: string; createdAt: Date; updatedAt: Date }> = [];
+        try {
+            featureRequests = await this.prisma.featureRequest.findMany({ orderBy: { createdAt: "desc" } });
+        } catch (error) {
+            featureRequests = [];
+        }
+
         return {
             version: 3,
             currentUserId: user.id,
@@ -154,6 +163,16 @@ export class ImportExportService {
                     intensity: session.intensity || "medium",
                     notes: session.notes || ""
                 }))
+            })),
+            featureRequests: featureRequests.map((item) => ({
+                id: item.id,
+                userId: item.userId,
+                type: item.type,
+                title: item.title,
+                description: item.description || "",
+                status: item.status,
+                createdAt: item.createdAt.toISOString(),
+                updatedAt: item.updatedAt.toISOString()
             })),
             exportedAt: new Date().toISOString()
         };
