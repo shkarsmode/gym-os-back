@@ -88,7 +88,8 @@ export class WorkoutsService {
             workoutType: dto.workoutType || "custom",
             notes: dto.notes ?? null,
             startedAt: timings.startedAt,
-            finishedAt: timings.finishedAt
+            finishedAt: timings.finishedAt,
+            durationOverride: dto.durationOverride === undefined || dto.durationOverride === null ? null : Math.round(Number(dto.durationOverride))
         };
 
         const exercisesCreate = exercises.map((exercise, index) => ({

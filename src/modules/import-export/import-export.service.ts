@@ -136,6 +136,7 @@ export class ImportExportService {
                 workoutType: item.workoutType,
                 startedAt: item.startedAt?.toISOString() || null,
                 finishedAt: item.finishedAt?.toISOString() || null,
+                durationOverride: item.durationOverride ?? null,
                 notes: item.notes || "",
                 exercises: item.exercises.map((exercise) => ({
                     id: exercise.id,
@@ -458,6 +459,7 @@ async function importWorkouts(transaction: any, userId: string, workouts: any[])
                 workoutType: workout.workoutType || "custom",
                 startedAt: workout.startedAt ? parseDate(workout.startedAt) : null,
                 finishedAt: workout.finishedAt ? parseDate(workout.finishedAt) : null,
+                durationOverride: workout.durationOverride === undefined || workout.durationOverride === null ? null : Math.round(Number(workout.durationOverride)),
                 notes: workout.notes || null,
                 exercises: {
                     create: (workout.exercises || []).map((exercise: any, index: number) => ({

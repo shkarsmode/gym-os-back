@@ -228,6 +228,12 @@ export class SaveWorkoutDto {
     notes?: string;
 
     @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Max(1440)
+    durationOverride?: number;
+
+    @IsOptional()
     @IsArray()
     @ValidateNested({ each: true })
     @Type(() => ImportWorkoutExerciseDto)

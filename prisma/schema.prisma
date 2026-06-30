@@ -169,12 +169,13 @@ model Workout {
     title           String
     status          WorkoutStatus     @default(planned)
     workoutType     String
-    startedAt       DateTime?
-    finishedAt      DateTime?
-    notes           String?
-    createdAt       DateTime          @default(now())
-    updatedAt       DateTime          @updatedAt
-    user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+    startedAt        DateTime?
+    finishedAt       DateTime?
+    durationOverride Int?
+    notes            String?
+    createdAt        DateTime          @default(now())
+    updatedAt        DateTime          @updatedAt
+    user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
     exercises       WorkoutExercise[]
     cardioSessions  CardioSession[]
     personalRecords PersonalRecord[]

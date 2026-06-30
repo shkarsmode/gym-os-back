@@ -57,6 +57,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 'ALTER TABLE "User" ALTER COLUMN "approved" SET DEFAULT false;'
             );
 
+            // Manual workout-duration override (minutes). NULL = auto (finishedAt - startedAt).
+            // Cheap + idempotent, so reconcile on every cold start like `approved` above.
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "Workout" ADD COLUMN IF NOT EXISTS "durationOverride" INTEGER;'
+            );
+
             // Index creation is 19 round-trips, so gate it behind a single cheap
             // marker check: once the last index exists, the whole pass is done.
             const marker = (await this.$queryRawUnsafe(
