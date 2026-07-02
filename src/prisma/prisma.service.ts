@@ -63,6 +63,13 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 'ALTER TABLE "Workout" ADD COLUMN IF NOT EXISTS "durationOverride" INTEGER;'
             );
 
+            // Per-user appearance/settings preferences (theme, accent, compact, workout
+            // defaults …) as a JSON blob so they sync across devices. NULL = never saved
+            // → client falls back to its local defaults. Idempotent, reconcile every start.
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "preferences" JSONB;'
+            );
+
             // Index creation is 19 round-trips, so gate it behind a single cheap
             // marker check: once the last index exists, the whole pass is done.
             const marker = (await this.$queryRawUnsafe(

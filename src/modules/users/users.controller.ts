@@ -3,6 +3,7 @@ import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { ApprovedGuard } from "../../shared/approved.guard";
 import { UpdateProfileDto } from "./dto/update-profile.dto";
+import { UpdatePreferencesDto } from "./dto/update-preferences.dto";
 import { SetApprovalDto } from "./dto/set-approval.dto";
 import { SetRoleDto } from "./dto/set-role.dto";
 import { UsersService } from "./users.service";
@@ -27,6 +28,13 @@ export class UsersController {
     @UseGuards(JwtAuthGuard, ApprovedGuard)
     updateMyProfile(@CurrentUser() user: RequestUser, @Body() dto: UpdateProfileDto) {
         return this.usersService.updateProfile(user.id, dto);
+    }
+
+    // Per-user appearance/settings preferences — synced across the user's devices.
+    @Post("me/preferences")
+    @UseGuards(JwtAuthGuard, ApprovedGuard)
+    updateMyPreferences(@CurrentUser() user: RequestUser, @Body() dto: UpdatePreferencesDto) {
+        return this.usersService.updatePreferences(user.id, dto.preferences || {});
     }
 
     // Admin-only: approve/revoke a user's access (enforced in the service).

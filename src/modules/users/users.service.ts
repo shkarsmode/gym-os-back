@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { isAdminUser, isSuperAdminUser } from "../../shared/admin";
 import { RequestUser } from "../../shared/current-user.decorator";
@@ -62,6 +63,17 @@ export class UsersService {
         }
 
         return user;
+    }
+
+    // Stores the whole preferences blob on the User row (wholesale replace — the
+    // client always sends its full pref set). Returns just the saved blob.
+    async updatePreferences(userId: string, preferences: Record<string, unknown>) {
+        const user = await this.prisma.user.update({
+            where: { id: userId },
+            data: { preferences: preferences as Prisma.InputJsonValue },
+            select: { preferences: true }
+        });
+        return { ok: true, preferences: user.preferences };
     }
 
     updateProfile(userId: string, dto: UpdateProfileDto) {
