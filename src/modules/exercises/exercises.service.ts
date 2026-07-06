@@ -39,12 +39,202 @@ const curatedExercises = [
     }
 ] as const;
 
+// Extra hand-picked catalog exercises (chest / back / triceps / biceps / shoulders
+// / forearms / calves) with fitnessprogramer.com animation gifs. Seeded once per
+// instance via ensureExtraExercises() — create-missing ONLY, so it never touches
+// or overwrites existing exercises, templates or standards (unlike the curated
+// reset path). Muscle-group names match the frontend's filter icons.
+const FP = "https://fitnessprogramer.com/wp-content/uploads";
+const extraCuratedExercises = [
+    {
+        slug: "smith-bench-press", name: "Жим Сміта лежачи", aliases: ["Smith Machine Bench Press"],
+        primaryMuscleGroup: "Груди", secondaryMuscleGroups: ["Трицепс", "Плечі"],
+        movementPattern: "Горизонтальний жим", equipment: "Тренажер Сміта", category: "Сила", difficulty: "Середній",
+        description: "Жим у машині Сміта: фіксована траєкторія дозволяє безпечно навантажити груди без страхувальника.",
+        techniqueSteps: ["Ляж так, щоб гриф опускався на середину грудей.", "Опускай контрольовано, злегка торкаючись грудей.", "Вичавлюй угору, не блокуючи лікті жорстко."],
+        commonMistakes: ["Занадто високе положення грифа над шиєю.", "Відрив таза від лавки."],
+        safetyTips: ["Перевір висоту стоперів перед підходом.", "Не жертвуй амплітудою заради ваги."],
+        mediaUrl: `${FP}/2021/06/Smith-Machine-Bench-Press.gif`
+    },
+    {
+        slug: "smith-incline-bench-press", name: "Жим Сміта під кутом", aliases: ["Incline Smith Machine Bench Press"],
+        primaryMuscleGroup: "Груди", secondaryMuscleGroups: ["Плечі", "Трицепс"],
+        movementPattern: "Похилий жим", equipment: "Тренажер Сміта", category: "Гіпертрофія", difficulty: "Середній",
+        description: "Похилий жим у Сміті акцентує верх грудей і передню дельту при стабільній траєкторії.",
+        techniqueSteps: ["Встанови лавку під кутом 30–45°.", "Опускай гриф до верху грудей.", "Вичавлюй угору по фіксованій траєкторії."],
+        commonMistakes: ["Надто крутий кут (переходить у плечі).", "Ривок із нижньої точки."],
+        safetyTips: ["Тримай лопатки зведеними.", "Контролюй негативну фазу."],
+        mediaUrl: `${FP}/2021/06/Smith-Machine-Incline-Bench-Press.gif`
+    },
+    {
+        slug: "incline-dumbbell-press", name: "Жим гантелей під кутом", aliases: ["Incline Dumbbell Press"],
+        primaryMuscleGroup: "Груди", secondaryMuscleGroups: ["Плечі", "Трицепс"],
+        movementPattern: "Похилий жим", equipment: "Гантелі", category: "Гіпертрофія", difficulty: "Середній",
+        description: "Жим гантелей на похилій лавці дає більшу амплітуду і навантажує верх грудей.",
+        techniqueSteps: ["Сядь на лавку 30–45°, гантелі на рівні грудей.", "Жени гантелі вгору й трохи всередину.", "Опускай контрольовано до розтягнення грудей."],
+        commonMistakes: ["Занадто широке зведення ліктів.", "Стук гантелей угорі."],
+        safetyTips: ["Починай із помірної ваги для контролю.", "Не роняй гантелі в нижній точці."],
+        mediaUrl: `${FP}/2021/02/Incline-Dumbbell-Press.gif`
+    },
+    {
+        slug: "dumbbell-fly", name: "Розведення гантелей лежачи", aliases: ["Dumbbell Fly", "Разводка"],
+        primaryMuscleGroup: "Груди", secondaryMuscleGroups: ["Плечі"],
+        movementPattern: "Зведення", equipment: "Гантелі", category: "Ізоляція", difficulty: "Початковий",
+        description: "Ізоляція грудних через зведення-розведення. Акцент на розтягненні й скороченні, а не на вазі.",
+        techniqueSteps: ["Ляж, гантелі над грудьми, лікті трохи зігнуті.", "Розводь по дузі до легкого розтягнення.", "Зводь гантелі, стискаючи груди."],
+        commonMistakes: ["Прямі лікті (перевантаження суглоба).", "Завелика вага замість техніки."],
+        safetyTips: ["Не опускай гантелі надто низько.", "Тримай фіксований кут у ліктях."],
+        mediaUrl: `${FP}/2021/02/Dumbbell-Fly.gif`
+    },
+    {
+        slug: "chest-dips", name: "Віджимання на брусах", aliases: ["Chest Dips"],
+        primaryMuscleGroup: "Груди", secondaryMuscleGroups: ["Трицепс", "Плечі"],
+        movementPattern: "Горизонтальний жим", equipment: "Власна вага", category: "Сила", difficulty: "Середній",
+        description: "Віджимання на брусах з нахилом корпусу вперед — потужна базова вправа для низу грудей і трицепса.",
+        techniqueSteps: ["Нахили корпус трохи вперед.", "Опускайся, доки плечі не будуть паралельні підлозі.", "Вичавлюй угору, не блокуючи лікті."],
+        commonMistakes: ["Надто глибокий провал у плечах.", "Ривки замість контролю."],
+        safetyTips: ["Не опускайся нижче комфортної амплітуди плеча.", "Додавай вагу поясом лише після освоєння техніки."],
+        mediaUrl: `${FP}/2021/06/Chest-Dips.gif`
+    },
+    {
+        slug: "barbell-bent-over-row", name: "Тяга штанги в нахилі", aliases: ["Barbell Bent-Over Row"],
+        primaryMuscleGroup: "Спина", secondaryMuscleGroups: ["Біцепс", "Плечі"],
+        movementPattern: "Горизонтальна тяга", equipment: "Штанга", category: "Сила", difficulty: "Середній",
+        description: "Базова горизонтальна тяга для товщини спини. Тримай нейтральну спину й веди рух ліктями.",
+        techniqueSteps: ["Нахилися з рівною спиною під ~45°.", "Тягни штангу до низу живота, зводячи лопатки.", "Опускай контрольовано без округлення спини."],
+        commonMistakes: ["Округлення попереку.", "Тяга ривком корпусу."],
+        safetyTips: ["Тримай прес напруженим для захисту попереку.", "Не гнись у спині під вагою."],
+        mediaUrl: `${FP}/2021/02/Barbell-Bent-Over-Row.gif`
+    },
+    {
+        slug: "one-arm-dumbbell-row", name: "Тяга гантелі однією рукою", aliases: ["One-Arm Dumbbell Row"],
+        primaryMuscleGroup: "Спина", secondaryMuscleGroups: ["Біцепс"],
+        movementPattern: "Горизонтальна тяга", equipment: "Гантелі", category: "Гіпертрофія", difficulty: "Початковий",
+        description: "Одностороння тяга з опорою на лавку — велика амплітуда й акцент на широчайших.",
+        techniqueSteps: ["Обіприся коліном і рукою на лавку.", "Тягни гантель до пояса, ведучи ліктем.", "Опускай до повного розтягнення широчайшого."],
+        commonMistakes: ["Розворот корпусу для допомоги.", "Тяга біцепсом замість спини."],
+        safetyTips: ["Тримай спину рівною й паралельною підлозі.", "Не роби ривків у нижній точці."],
+        mediaUrl: `${FP}/2021/02/Dumbbell-Row.gif`
+    },
+    {
+        slug: "t-bar-row", name: "Тяга Т-грифа", aliases: ["T-Bar Row"],
+        primaryMuscleGroup: "Спина", secondaryMuscleGroups: ["Біцепс"],
+        movementPattern: "Горизонтальна тяга", equipment: "Штанга", category: "Гіпертрофія", difficulty: "Середній",
+        description: "Тяга Т-грифа навантажує середину спини з великою вагою при стабільному положенні корпусу.",
+        techniqueSteps: ["Стань над грифом, нахилися з рівною спиною.", "Тягни руків'я до грудей, зводячи лопатки.", "Опускай контрольовано, зберігаючи натяг."],
+        commonMistakes: ["Випрямлення корпусу ривком.", "Округлення спини."],
+        safetyTips: ["Тримай нейтральну спину протягом усього руху.", "Не бери надмірну вагу на шкоду техніці."],
+        mediaUrl: `${FP}/2021/04/t-bar-rows.gif`
+    },
+    {
+        slug: "barbell-curl", name: "Підйом штанги на біцепс", aliases: ["Barbell Curl"],
+        primaryMuscleGroup: "Біцепс", secondaryMuscleGroups: ["Передпліччя"],
+        movementPattern: "Згинання", equipment: "Штанга", category: "Гіпертрофія", difficulty: "Початковий",
+        description: "Класична базова вправа на біцепс. Тримай лікті нерухомими й уникай розгойдування.",
+        techniqueSteps: ["Візьми штангу хватом на ширині плечей.", "Згинай руки, тримаючи лікті на місці.", "Опускай контрольовано до повного випрямлення."],
+        commonMistakes: ["Розгойдування корпусом.", "Рух ліктів уперед."],
+        safetyTips: ["Не читінгуй попереком.", "Контролюй негативну фазу."],
+        mediaUrl: `${FP}/2021/02/Barbell-Curl.gif`
+    },
+    {
+        slug: "hammer-curl", name: "Молотки з гантелями", aliases: ["Hammer Curl"],
+        primaryMuscleGroup: "Біцепс", secondaryMuscleGroups: ["Передпліччя"],
+        movementPattern: "Згинання", equipment: "Гантелі", category: "Гіпертрофія", difficulty: "Початковий",
+        description: "Згинання нейтральним хватом — акцент на брахіалісі й передпліччі, товщина руки.",
+        techniqueSteps: ["Тримай гантелі нейтральним хватом (долоні всередину).", "Згинай руки, не обертаючи кисть.", "Опускай контрольовано."],
+        commonMistakes: ["Розгойдування.", "Занадто швидкий темп."],
+        safetyTips: ["Тримай лікті притиснутими до корпусу.", "Не кидай гантелі вниз."],
+        mediaUrl: `${FP}/2021/02/Hammer-Curl.gif`
+    },
+    {
+        slug: "reverse-barbell-curl", name: "Підйом штанги зворотним хватом", aliases: ["Reverse Barbell Curl"],
+        primaryMuscleGroup: "Біцепс", secondaryMuscleGroups: ["Передпліччя"],
+        movementPattern: "Згинання", equipment: "Штанга", category: "Ізоляція", difficulty: "Середній",
+        description: "Згинання прямим (зворотним) хватом навантажує брахіаліс і передпліччя — сила хвату й товщина руки.",
+        techniqueSteps: ["Візьми штангу верхнім хватом.", "Згинай руки, тримаючи зап'ястя прямими.", "Опускай контрольовано."],
+        commonMistakes: ["Згинання зап'ясть.", "Читінг корпусом."],
+        safetyTips: ["Бери меншу вагу, ніж у звичайному підйомі.", "Тримай лікті нерухомими."],
+        mediaUrl: `${FP}/2021/02/Barbell-Reverse-Curl.gif`
+    },
+    {
+        slug: "bench-dips", name: "Зворотні віджимання від лавки", aliases: ["Bench Dips"],
+        primaryMuscleGroup: "Трицепс", secondaryMuscleGroups: ["Груди", "Плечі"],
+        movementPattern: "Розгинання", equipment: "Власна вага", category: "Сила", difficulty: "Початковий",
+        description: "Зворотні віджимання від лавки — доступна базова вправа на трицепс власною вагою.",
+        techniqueSteps: ["Обіприся руками на край лавки.", "Опускайся, згинаючи лікті до ~90°.", "Вичавлюй угору трицепсом."],
+        commonMistakes: ["Занадто глибокий провал (навантаження плеча).", "Розведення ліктів у сторони."],
+        safetyTips: ["Тримай лікті напрямленими назад.", "Не опускайся нижче комфортної амплітуди."],
+        mediaUrl: `${FP}/2021/02/Bench-Dips.gif`
+    },
+    {
+        slug: "rope-pushdown", name: "Розгинання на блоці з канатом", aliases: ["Rope Pushdown", "Triceps Pushdown"],
+        primaryMuscleGroup: "Трицепс", secondaryMuscleGroups: [],
+        movementPattern: "Розгинання", equipment: "Блок", category: "Ізоляція", difficulty: "Початковий",
+        description: "Розгинання рук на верхньому блоці з канатом — ізоляція трицепса з розведенням у нижній точці.",
+        techniqueSteps: ["Візьми канат, лікті притисни до корпусу.", "Розгинай руки донизу, розводячи кінці канату.", "Повертай контрольовано, зберігаючи натяг."],
+        commonMistakes: ["Рух ліктями вперед-назад.", "Нахил корпусу для допомоги."],
+        safetyTips: ["Тримай лікті на місці.", "Не використовуй інерцію."],
+        mediaUrl: `${FP}/2021/06/Rope-Pushdown.gif`
+    },
+    {
+        slug: "dumbbell-shoulder-press", name: "Жим гантелей сидячи", aliases: ["Seated Dumbbell Shoulder Press"],
+        primaryMuscleGroup: "Плечі", secondaryMuscleGroups: ["Трицепс"],
+        movementPattern: "Вертикальний жим", equipment: "Гантелі", category: "Сила", difficulty: "Середній",
+        description: "Базовий вертикальний жим на дельти сидячи. Стабільний корпус і повна амплітуда.",
+        techniqueSteps: ["Сядь із опорою на спинку, гантелі на рівні вух.", "Жени гантелі вгору, не блокуючи лікті жорстко.", "Опускай контрольовано до рівня вух."],
+        commonMistakes: ["Прогин у попереку.", "Стук гантелей угорі."],
+        safetyTips: ["Тримай прес напруженим.", "Не заводь гантелі надто далеко за голову."],
+        mediaUrl: `${FP}/2021/02/Dumbbell-Shoulder-Press.gif`
+    },
+    {
+        slug: "dumbbell-lateral-raise", name: "Махи гантелями в сторони", aliases: ["Dumbbell Lateral Raise"],
+        primaryMuscleGroup: "Плечі", secondaryMuscleGroups: [],
+        movementPattern: "Розведення", equipment: "Гантелі", category: "Ізоляція", difficulty: "Початковий",
+        description: "Ізоляція середньої дельти — ключова вправа для ширини плечей. Легка вага, чиста техніка.",
+        techniqueSteps: ["Стань прямо, гантелі біля стегон.", "Піднімай руки в сторони до рівня плечей.", "Опускай повільно, контролюючи рух."],
+        commonMistakes: ["Занадто велика вага з розгойдуванням.", "Підйом вище плечей."],
+        safetyTips: ["Тримай легкий згин у ліктях.", "Не закидай гантелі інерцією."],
+        mediaUrl: `${FP}/2021/02/Dumbbell-Lateral-Raise.gif`
+    },
+    {
+        slug: "barbell-upright-row", name: "Тяга штанги до підборіддя", aliases: ["Barbell Upright Row"],
+        primaryMuscleGroup: "Плечі", secondaryMuscleGroups: ["Трапеції", "Біцепс"],
+        movementPattern: "Вертикальна тяга", equipment: "Штанга", category: "Гіпертрофія", difficulty: "Середній",
+        description: "Вертикальна тяга штанги вздовж тіла навантажує середню дельту й трапецію.",
+        techniqueSteps: ["Візьми штангу хватом трохи вужче плечей.", "Тягни вздовж тіла, ведучи ліктями вгору.", "Опускай контрольовано."],
+        commonMistakes: ["Занадто вузький хват (навантаження зап'ясть).", "Підйом ліктів надто високо."],
+        safetyTips: ["Не піднімай лікті вище плечей за дискомфорту.", "Тримай штангу близько до тіла."],
+        mediaUrl: `${FP}/2021/02/barbell-uprightrow.gif`
+    },
+    {
+        slug: "dumbbell-wrist-curl", name: "Згинання зап'ясть з гантелями", aliases: ["Dumbbell Wrist Curl"],
+        primaryMuscleGroup: "Передпліччя", secondaryMuscleGroups: [],
+        movementPattern: "Згинання", equipment: "Гантелі", category: "Ізоляція", difficulty: "Початковий",
+        description: "Ізоляція згиначів передпліччя — сила хвату. Передпліччя лежать на стегнах або лавці.",
+        techniqueSteps: ["Поклади передпліччя на стегна, кисті звисають.", "Згинай зап'ястя вгору гантелями.", "Опускай повільно до повного розтягнення."],
+        commonMistakes: ["Рух усім передпліччям.", "Занадто велика вага."],
+        safetyTips: ["Ізолюй лише зап'ястя.", "Працюй у повній, але комфортній амплітуді."],
+        mediaUrl: `${FP}/2021/06/Dumbbell-Wrist-Curl.gif`
+    },
+    {
+        slug: "standing-calf-raise", name: "Підйом на носки стоячи", aliases: ["Standing Calf Raise"],
+        primaryMuscleGroup: "Литки", secondaryMuscleGroups: [],
+        movementPattern: "Підйом на носки", equipment: "Тренажер", category: "Гіпертрофія", difficulty: "Початковий",
+        description: "Базова вправа на литки стоячи (акцент на литковому м'язі). Повна амплітуда й пауза вгорі.",
+        techniqueSteps: ["Стань носками на платформу, п'яти звисають.", "Піднімайся максимально високо на носки.", "Опускай п'яти нижче платформи до розтягнення."],
+        commonMistakes: ["Коротка амплітуда.", "Пружинення без контролю."],
+        safetyTips: ["Роби паузу у верхній точці.", "Не кидай п'яти вниз ривком."],
+        mediaUrl: `${FP}/2021/06/Standing-Calf-Raise.gif`
+    }
+] as const;
+
 @Injectable()
 export class ExercisesService implements OnModuleInit {
     // Once we've confirmed the curated catalog is seeded we don't need to re-run the
     // lookup on every GET /exercises. Reset on cold start (new instance) and after a
     // catalog reset, so it self-heals.
     private curatedReady = false;
+    private extraReady = false;
     private reactionTableReady = false;
 
     constructor(private readonly prisma: PrismaService) {}
@@ -84,6 +274,7 @@ export class ExercisesService implements OnModuleInit {
 
     async findAll() {
         await this.ensureCuratedCatalogAvailable();
+        await this.ensureExtraExercises();
         const exercises = await this.prisma.exercise.findMany({ orderBy: { name: "asc" } });
         const counts = await this.reactionCounts();
         return exercises.map((exercise) => ({
@@ -344,6 +535,50 @@ export class ExercisesService implements OnModuleInit {
             isCustom: false,
             createdByUserId: null
         };
+    }
+
+    // Seed the extra hand-picked exercises (with gifs). Create-missing ONLY — never
+    // updates or deletes existing rows, templates, or standards, so it's safe to run
+    // on a live catalog and won't clobber admin edits. Idempotent by slug.
+    private async ensureExtraExercises() {
+        if (this.extraReady) {
+            return;
+        }
+        const slugs = extraCuratedExercises.map((exercise) => exercise.slug);
+        const existing = await this.prisma.exercise.findMany({
+            where: { slug: { in: slugs } },
+            select: { slug: true }
+        });
+        const existingSlugs = new Set(existing.map((exercise) => exercise.slug));
+        const missing = extraCuratedExercises.filter((exercise) => !existingSlugs.has(exercise.slug));
+
+        if (missing.length) {
+            await this.prisma.exercise.createMany({
+                data: missing.map((exercise) => ({
+                    slug: exercise.slug,
+                    name: exercise.name,
+                    aliases: [...exercise.aliases],
+                    primaryMuscleGroup: exercise.primaryMuscleGroup,
+                    secondaryMuscleGroups: [...exercise.secondaryMuscleGroups],
+                    movementPattern: exercise.movementPattern,
+                    equipment: exercise.equipment,
+                    category: exercise.category,
+                    difficulty: exercise.difficulty,
+                    description: exercise.description,
+                    techniqueSteps: [...exercise.techniqueSteps],
+                    commonMistakes: [...exercise.commonMistakes],
+                    safetyTips: [...exercise.safetyTips],
+                    mediaUrl: exercise.mediaUrl,
+                    mediaType: "gif",
+                    originalName: exercise.name,
+                    isCustom: false,
+                    status: "approved",
+                    createdByUserId: null
+                })),
+                skipDuplicates: true
+            });
+        }
+        this.extraReady = true;
     }
 
     private async ensureCuratedCatalogAvailable() {
