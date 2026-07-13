@@ -8,6 +8,8 @@ const MAX_WEIGHT = 2000;
 const MAX_REPS = 1000;
 const MAX_RPE = 10;
 const MAX_REST = 86400;
+// A single timed set caps at 24h of hold time — same ceiling logic as rest.
+const MAX_SET_DURATION = 86400;
 
 export class CreateWorkoutDto {
     @IsDateString()
@@ -86,6 +88,12 @@ export class CreateWorkoutSetDto {
     @IsOptional()
     @IsNumber()
     @Min(0)
+    @Max(MAX_SET_DURATION)
+    durationSeconds?: number;
+
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
     @Max(MAX_RPE)
     rpe?: number;
 
@@ -120,6 +128,12 @@ export class UpdateWorkoutSetDto {
     @Min(0)
     @Max(MAX_REPS)
     repetitions?: number;
+
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Max(MAX_SET_DURATION)
+    durationSeconds?: number;
 
     @IsOptional()
     @IsNumber()

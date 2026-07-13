@@ -101,6 +101,7 @@ export class WorkoutsService {
                     type: (set.type || "working") as WorkoutSetType,
                     weight: Number(set.weight) || 0,
                     repetitions: Number(set.repetitions) || 0,
+                    durationSeconds: set.durationSeconds === undefined || set.durationSeconds === null ? null : Math.round(Number(set.durationSeconds)),
                     rpe: set.rpe === undefined || set.rpe === null ? null : Number(set.rpe),
                     restSeconds: set.restSeconds ?? 90,
                     isCompleted: Boolean(set.isCompleted),

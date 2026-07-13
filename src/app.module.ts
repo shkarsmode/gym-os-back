@@ -18,6 +18,7 @@ import { TeamStatsModule } from "./modules/team-stats/team-stats.module";
 import { StatsModule } from "./modules/stats/stats.module";
 import { ImportExportModule } from "./modules/import-export/import-export.module";
 import { FeedbackModule } from "./modules/feedback/feedback.module";
+import { AiModule } from "./modules/ai/ai.module";
 
 @Module({
     imports: [
@@ -36,7 +37,8 @@ import { FeedbackModule } from "./modules/feedback/feedback.module";
         TeamStatsModule,
         StatsModule,
         ImportExportModule,
-        FeedbackModule
+        FeedbackModule,
+        AiModule
     ],
     controllers: [HealthController],
     providers: [{ provide: APP_GUARD, useClass: ThrottleGuard }]
