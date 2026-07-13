@@ -208,6 +208,9 @@ model WorkoutSet {
     type              WorkoutSetType  @default(working)
     weight            Decimal         @default(0) @db.Decimal(7, 2)
     repetitions       Int             @default(0)
+    // Optional timed-set duration in seconds (planks, static holds, timed carries).
+    // NULL for classic rep-based sets and every pre-existing row — never backfilled.
+    durationSeconds   Int?
     rpe               Decimal?        @db.Decimal(4, 1)
     restSeconds       Int             @default(90)
     isCompleted       Boolean         @default(false)
@@ -330,4 +333,32 @@ model WorkoutTemplateExercise {
 
     @@index([workoutTemplateId])
     @@index([exerciseId])
+}
+
+// Audit log for AI (Gemini) calls made by the admin-only AI-workout feature. One row
+// per backend call. `userId` is a loose reference (no FK) so the log survives user
+// deletion for auditing. Never stores prompts, transcripts, responses, or secrets —
+// only safe usage metadata and normalized error codes.
+model AiUsageLog {
+    id                  String   @id @default(cuid())
+    userId              String?
+    operation           String
+    model               String
+    status              String
+    errorCode           String?
+    errorMessage        String?
+    inputTokens         Int?
+    outputTokens        Int?
+    totalTokens         Int?
+    cachedTokens        Int?
+    thoughtsTokens      Int?
+    durationMs          Int?
+    inputLength         Int?
+    recognizedExercises Int?
+    warningsCount       Int?
+    createdAt           DateTime @default(now())
+
+    @@index([createdAt])
+    @@index([userId])
+    @@index([status])
 }

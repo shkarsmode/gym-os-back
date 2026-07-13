@@ -63,6 +63,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 'ALTER TABLE "Workout" ADD COLUMN IF NOT EXISTS "durationOverride" INTEGER;'
             );
 
+            // Optional per-set duration in seconds for timed sets (planks, static holds,
+            // timed carries). NULL for every existing row and all rep-based sets — never
+            // backfilled. Idempotent single-statement DDL runs fine over the pooler.
+            // (The AiUsageLog table is reconciled separately in AiUsageService, mirroring
+            // the ExerciseReaction pattern.)
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "WorkoutSet" ADD COLUMN IF NOT EXISTS "durationSeconds" INTEGER;'
+            );
+
             // Per-user appearance/settings preferences (theme, accent, compact, workout
             // defaults …) as a JSON blob so they sync across devices. NULL = never saved
             // → client falls back to its local defaults. Idempotent, reconcile every start.

@@ -16,6 +16,7 @@
         "seed": "node --import tsx prisma/seed.ts"
     },
     "dependencies": {
+        "@google/genai": "^2.11.0",
         "@nestjs/common": "^10.4.20",
         "@nestjs/config": "^3.3.0",
         "@nestjs/core": "^10.4.20",

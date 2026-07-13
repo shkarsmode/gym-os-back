@@ -154,6 +154,56 @@ Templates, stats і data:
 - `POST /import`
 - `POST /import/exercises`
 
+AI (тільки admin):
+
+- `POST /ai/workouts/parse` — розпізнати текст тренування через Gemini і повернути structured preview
+- `GET /ai/statistics/summary` — зведення (запити, токени, success rate, latency)
+- `GET /ai/statistics/usage` — денні бакети токенів для графіка
+- `GET /ai/statistics/requests` — останні запити (з фільтрами `period`, `status`, `model`, `userId`)
+- `GET /ai/statistics/limits` — офіційні ліміти моделі + фактичне використання GymOS
+
+## AI-тренування (Gemini)
+
+Admin-only функція: адміністратор описує тренування текстом або голосом (голос розпізнається на frontend через Web Speech API), а backend перетворює transcript у структуроване тренування через Google Gemini.
+
+### Налаштування Gemini
+
+1. Відкрий [Google AI Studio](https://aistudio.google.com/apikey) у своєму Google-акаунті.
+2. Створи API key для проєкту з назвою `GymOS`.
+3. Додай ключ **лише** в environment variables backend (ніколи в код чи git):
+
+```env
+GEMINI_API_KEY=""
+GEMINI_MODEL=""                 # порожньо = gemini-2.5-flash (free tier)
+GEMINI_REQUEST_TIMEOUT_MS="15000"
+GEMINI_MAX_INPUT_LENGTH="6000"
+```
+
+Використовується офіційний SDK `@google/genai` зі strict structured output (JSON schema). Модель за замовчуванням — `gemini-2.5-flash` (free tier). Альтернатива з більшою денною квотою — `gemini-2.5-flash-lite`.
+
+### Ліміти free tier
+
+Актуальні офіційні ліміти дивись у [документації](https://ai.google.dev/gemini-api/docs/rate-limits) та в [AI Studio → Rate limits](https://aistudio.google.com/rate-limit) для конкретного проєкту. Орієнтовно (free tier):
+
+| Модель | RPM | Запитів/день | TPM |
+| --- | --- | --- | --- |
+| gemini-2.5-flash | 10 | 250 | 250k |
+| gemini-2.5-flash-lite | 15 | 1000 | 250k |
+
+GymOS не показує вигаданий «залишок квоти»: сторінка AI-статистики окремо показує офіційний ліміт моделі, фактичне використання в GymOS і оцінку відносно ліміту, з посиланням на офіційну сторінку квот.
+
+### Обмеження і безпека
+
+- Endpoint доступний тільки admin (JWT + approved + admin guard). Звичайний користувач отримує `403` навіть при прямому HTTP-запиті.
+- Серверний rate limit: cooldown між запитами, ліміт на хвилину, заборона паралельних запитів (`AI_RATE_LIMIT` з `retryAfterMs`).
+- Вхідний текст обмежений за довжиною; user text ізольований як дані (захист від prompt injection).
+- Gemini повертає лише `exerciseId` з переданого каталогу; backend повторно перевіряє id і робить локальний fuzzy-fallback. Неоднозначні вправи повертаються з варіантами і потребують підтвердження.
+- Аудит кожного виклику пишеться в `AiUsageLog` (тільки безпечні метадані: токени, статус, код помилки, latency — без промптів, transcript-ів і секретів).
+
+### Схема (`WorkoutSet.durationSeconds`, `AiUsageLog`)
+
+Додано nullable-поле `WorkoutSet.durationSeconds` (секунди для планок/статичних утримань) і модель `AiUsageLog`. Обидва створюються ідемпотентно на cold start (`PrismaService.ensureSchema` для колонки, `AiUsageService.ensureTable` для таблиці), бо Neon pooled connection не виконує DDL через `prisma db push`. Старі записи лишаються з `durationSeconds = null`.
+
 ## Vercel deploy
 
 Backend містить:
@@ -201,3 +251,4 @@ npm run build
 - `FRONTEND_URL`
 - `ADMIN_EMAILS`
 - `DEMO_OWNER_EMAIL`
+- `GEMINI_API_KEY` (для AI-тренування; не комітити)
