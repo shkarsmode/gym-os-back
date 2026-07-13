@@ -2,7 +2,9 @@
 // read from environment variables with these fallbacks so a missing var never breaks the
 // build. The API key is read from GEMINI_API_KEY and is never referenced here.
 
-export const AI_DEFAULT_MODEL = "gemini-2.5-flash";
+// Current-generation, low-latency, free-tier model available to new API keys.
+// (gemini-2.5-flash was retired for new users.) Override with GEMINI_MODEL.
+export const AI_DEFAULT_MODEL = "gemini-3.1-flash-lite";
 export const AI_DEFAULT_TIMEOUT_MS = 15000;
 export const AI_DEFAULT_MAX_INPUT_LENGTH = 6000;
 export const AI_MIN_INPUT_LENGTH = 3;
