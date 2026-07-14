@@ -108,6 +108,11 @@ export interface AiWorkoutResult {
     meta: {
         model: string;
         hasUnresolved: boolean;
+        tier: string;
+        // Daily quota for the current tier: null limit = unlimited (admin).
+        dailyLimit: number | null;
+        dailyUsed: number | null;
+        dailyRemaining: number | null;
     };
 }
 

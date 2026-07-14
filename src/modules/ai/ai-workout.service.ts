@@ -22,6 +22,8 @@ import {
     AI_MAX_SETS_PER_EXERCISE,
     AI_MAX_WEIGHT,
     AI_MIN_INPUT_LENGTH,
+    AI_PREMIUM_DAILY_LIMIT,
+    AI_PREMIUM_MAX_INPUT_LENGTH,
     aiMaxInputLength,
     CARDIO_INTENSITIES,
     CARDIO_TYPES,
@@ -75,19 +77,35 @@ export class AiWorkoutService {
         private readonly usage: AiUsageService
     ) {}
 
-    async parse(user: RequestUser, rawText: string): Promise<AiWorkoutResult> {
+    async parse(user: RequestUser, rawText: string, tier: string): Promise<AiWorkoutResult> {
+        // Tiered access: free is blocked entirely, premium (PRO) gets a shorter input cap
+        // and a daily quota, admin is unlimited with the full input length.
+        if (tier === "free") {
+            throw new AiError(AI_ERROR.FORBIDDEN, "AI-тренування доступне у тарифі PRO.", 403);
+        }
+        const maxInputLength = tier === "admin" ? aiMaxInputLength() : AI_PREMIUM_MAX_INPUT_LENGTH;
+
         const text = normalizeInput(rawText);
         if (text.length < AI_MIN_INPUT_LENGTH) {
             throw new AiError(AI_ERROR.INPUT_TOO_SHORT, "Опис тренування закороткий.", 400);
         }
-        if (text.length > aiMaxInputLength()) {
-            throw new AiError(AI_ERROR.INPUT_TOO_LONG, "Опис тренування задовгий.", 413);
+        if (text.length > maxInputLength) {
+            throw new AiError(AI_ERROR.INPUT_TOO_LONG, `Опис задовгий. Максимум ${maxInputLength} символів.`, 413);
         }
         if (!this.gemini.isConfigured()) {
             throw new AiError(AI_ERROR.NOT_CONFIGURED, "AI тимчасово недоступний.", 503);
         }
         if (this.inFlight.has(user.id)) {
             throw new AiError(AI_ERROR.RATE_LIMIT, "Зачекай завершення попереднього запиту.", 429);
+        }
+
+        // Premium daily quota (admin unlimited). Counts only successful parses today.
+        let dailyUsed = 0;
+        if (tier === "premium") {
+            dailyUsed = await this.usage.countTodaySuccess(user.id);
+            if (dailyUsed >= AI_PREMIUM_DAILY_LIMIT) {
+                throw new AiError(AI_ERROR.DAILY_LIMIT, `Ліміт PRO: ${AI_PREMIUM_DAILY_LIMIT} AI-тренування на день вичерпано. Спробуй завтра.`, 429);
+            }
         }
 
         this.inFlight.add(user.id);
@@ -98,6 +116,10 @@ export class AiWorkoutService {
         try {
             const { payload, usage } = await this.callGemini(text, catalog);
             const result = this.mapResult(payload, catalog, model);
+            result.meta.tier = tier;
+            result.meta.dailyLimit = tier === "premium" ? AI_PREMIUM_DAILY_LIMIT : null;
+            result.meta.dailyUsed = tier === "premium" ? dailyUsed + 1 : null;
+            result.meta.dailyRemaining = tier === "premium" ? Math.max(0, AI_PREMIUM_DAILY_LIMIT - (dailyUsed + 1)) : null;
             await this.usage.log({
                 userId: user.id,
                 operation: "parse_workout",
@@ -241,7 +263,11 @@ export class AiWorkoutService {
             unresolvedExercises,
             meta: {
                 model,
-                hasUnresolved: exercises.some((exercise) => exercise.status !== "resolved")
+                hasUnresolved: exercises.some((exercise) => exercise.status !== "resolved"),
+                tier: "",
+                dailyLimit: null,
+                dailyUsed: null,
+                dailyRemaining: null
             }
         };
     }

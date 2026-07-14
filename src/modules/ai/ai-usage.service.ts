@@ -110,6 +110,20 @@ export class AiUsageService implements OnModuleInit {
         }
     }
 
+    // Successful parses by this user today — drives the per-tier daily quota. Best-effort:
+    // a DB hiccup returns 0 rather than blocking a legitimate request.
+    async countTodaySuccess(userId: string): Promise<number> {
+        try {
+            await this.ensureTable();
+            return await this.prisma.aiUsageLog.count({
+                where: { userId, operation: "parse_workout", status: "success", createdAt: { gte: startOfToday() } }
+            });
+        } catch (error) {
+            this.logger.warn(`countTodaySuccess failed: ${(error as Error).message}`);
+            return 0;
+        }
+    }
+
     async summary(query: StatisticsQuery) {
         await this.ensureTable();
         const period = query.period || "30d";

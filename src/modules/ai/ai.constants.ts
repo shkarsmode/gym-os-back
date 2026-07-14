@@ -9,6 +9,11 @@ export const AI_DEFAULT_TIMEOUT_MS = 15000;
 export const AI_DEFAULT_MAX_INPUT_LENGTH = 6000;
 export const AI_MIN_INPUT_LENGTH = 3;
 
+// Tiered access: free users are blocked, PRO (premium) gets a daily quota and a shorter
+// input cap, admins are unlimited with the full GEMINI_MAX_INPUT_LENGTH.
+export const AI_PREMIUM_DAILY_LIMIT = 3;
+export const AI_PREMIUM_MAX_INPUT_LENGTH = 2000;
+
 // Model sampling — low temperature for deterministic structured parsing.
 export const AI_TEMPERATURE = 0.2;
 export const AI_MAX_OUTPUT_TOKENS = 4096;
@@ -51,6 +56,8 @@ export const AI_DEFAULT_CARDIO_INTENSITY = "medium";
 // Normalized, non-leaking error codes surfaced to the client and stored in AiUsageLog.
 export const AI_ERROR = {
     NOT_CONFIGURED: "GEMINI_NOT_CONFIGURED",
+    FORBIDDEN: "AI_FORBIDDEN",
+    DAILY_LIMIT: "AI_DAILY_LIMIT",
     INPUT_TOO_SHORT: "INPUT_TOO_SHORT",
     INPUT_TOO_LONG: "INPUT_TOO_LONG",
     TIMEOUT: "TIMEOUT",
