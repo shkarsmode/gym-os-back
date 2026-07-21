@@ -4,11 +4,41 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { parseDateInput } from "../../shared/parse-date";
 import { assertWorkoutQuota as enforceWorkoutQuota } from "../../shared/workout-quota";
 import { QuotaTier } from "../../shared/admin";
+import { WORKOUT_PAGE_ORDER, cursorFilter, decodeCursor, encodeCursor } from "../../shared/cursor";
+import { serializeWorkout } from "../../shared/serialize";
 import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 
 @Injectable()
 export class WorkoutsService {
     constructor(private readonly prisma: PrismaService) {}
+
+    /**
+     * The caller's own history, one page at a time.
+     *
+     * Serves "load more" under the windowed boot payload, which ships only the most
+     * recent slice. Hydrated rows, because this is the user's own data and the history
+     * list can expand a workout inline.
+     */
+    async findMine(userId: string, limit?: number, cursor?: string) {
+        const take = Math.min(Math.max(limit || 30, 1), 100);
+        const decoded = decodeCursor(cursor);
+        const rows = await this.prisma.workout.findMany({
+            where: { userId, ...cursorFilter(decoded) },
+            // One extra row distinguishes "there is another page" from "this is the end"
+            // without a second count query.
+            take: take + 1,
+            include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true },
+            orderBy: WORKOUT_PAGE_ORDER
+        });
+
+        const hasMore = rows.length > take;
+        const page = hasMore ? rows.slice(0, take) : rows;
+        const last = page[page.length - 1];
+        return {
+            workouts: page.map(serializeWorkout),
+            nextCursor: hasMore && last ? encodeCursor(last) : null
+        };
+    }
 
     // Scoped to the caller. This is about to become the peer-hydration path (opening a
     // teammate's workout fetches it here instead of receiving every set in the boot

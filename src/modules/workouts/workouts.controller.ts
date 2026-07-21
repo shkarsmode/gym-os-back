@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { ApprovedGuard } from "../../shared/approved.guard";
@@ -17,6 +17,17 @@ export class WorkoutsController {
     // query string with no ownership check, so any approved member could read anyone's
     // full workout history — with the owner's raw User row (including email) inlined,
     // bypassing the redaction /export applies. It had zero callers.
+
+    // MUST stay above @Get(":id") — Nest matches in declaration order, so a later
+    // "mine" would be captured by the :id param route and looked up as a workout id.
+    @Get("mine")
+    findMine(
+        @CurrentUser() user: RequestUser,
+        @Query("limit") limit?: string,
+        @Query("cursor") cursor?: string
+    ) {
+        return this.workoutsService.findMine(user.id, Number(limit) || undefined, cursor);
+    }
 
     @Get(":id")
     findOne(@CurrentUser() user: RequestUser, @Param("id") id: string) {

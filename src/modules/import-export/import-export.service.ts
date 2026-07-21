@@ -143,6 +143,7 @@ export class ImportExportService {
         let peerSummaries: ReturnType<typeof serializeWorkoutSummary>[] = [];
         let workoutsCursor: string | null = null;
         let scoring: Awaited<ReturnType<ScoringService["scoreEveryone"]>> | null = null;
+        let ownSeq = new Map<string, number>();
 
         if (windowed) {
             // The extra row taken above answers "is there more?" — drop it before
@@ -176,6 +177,22 @@ export class ImportExportService {
 
             ownWorkouts = [...activeOutsideWindow, ...ownWorkouts];
             peerSummaries = peers.map(serializeWorkoutSummary);
+
+            // Lifetime ordinal per workout, assigned by the database.
+            //
+            // workoutNumber() in the client derives "Тренування #N" from the position
+            // within the workouts it happens to be holding. Under a window that is the
+            // position within the last 30, so a member with a hundred sessions would see
+            // #1..#30 instead of #71..#100 — every title silently wrong. ROW_NUMBER over
+            // the user's whole history is the real ordinal, and it also fixes an existing
+            // nondeterminism: the client sorted by `createdAt || date` while /export never
+            // sent createdAt, so same-day workouts could swap numbers between loads.
+            const ordinals = await this.prisma.$queryRaw<Array<{ id: string; seq: bigint }>>`
+                SELECT "id", ROW_NUMBER() OVER (ORDER BY "date" ASC, "id" ASC) AS seq
+                FROM "Workout" WHERE "userId" = ${user.id}
+            `;
+            const seqById = new Map(ordinals.map((row) => [row.id, Number(row.seq)]));
+            ownSeq = seqById;
 
             // Strip peer XP ledgers. Only the caller's own ledger is ever rendered (the
             // Прокачка tab); for everyone else the leaderboard needs nothing but the xp
@@ -263,7 +280,10 @@ export class ImportExportService {
             })),
             // Own workouts hydrated; peers as summaries with aggregates but no sets.
             // In legacy mode peerSummaries is empty and this is every workout, as before.
-            workouts: [...ownWorkouts.map(serializeWorkout), ...peerSummaries],
+            workouts: [
+                ...ownWorkouts.map((item) => ({ ...serializeWorkout(item), seq: ownSeq.get(item.id) })),
+                ...peerSummaries
+            ],
             featureRequests: featureRequests.map((item) => ({
                 id: item.id,
                 userId: item.userId,
