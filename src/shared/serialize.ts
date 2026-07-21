@@ -69,8 +69,72 @@ type WorkoutRow = {
  * date — moving displayed PR dates, the first-pr and pr-25 unlock dates, and the XP
  * ledger. This is the single easiest thing to get wrong here.
  */
+/**
+ * Scalars every workout row carries, in BOTH shapes.
+ *
+ * This is the single most load-bearing decision in the windowed payload. Because a
+ * summary carries the same aggregates as a hydrated row, one renderer serves both —
+ * the history list, the activity feed and the day sheet read only these numbers and
+ * never touch `exercises`. Without them, repointing any peer surface at summaries
+ * would make its renderer throw for every other caller too.
+ */
+function workoutAggregates(item: WorkoutRow) {
+    let setCount = 0;
+    let workingSetCount = 0;
+    let totalVolume = 0;
+    for (const exercise of item.exercises) {
+        for (const set of exercise.sets) {
+            if (!set.isCompleted) {
+                continue;
+            }
+            setCount += 1;
+            if (set.type !== "warmup") {
+                workingSetCount += 1;
+            }
+            totalVolume += numberValue(set.weight, 0) * set.repetitions;
+        }
+    }
+    const cardioMinutes = item.cardioSessions.reduce((sum, session) => sum + session.durationMinutes, 0);
+    // Mirrors the kernel's duration(): a manual override wins over the clock.
+    const clockMinutes = item.startedAt && item.finishedAt
+        ? Math.max(0, Math.round((item.finishedAt.getTime() - item.startedAt.getTime()) / 60000))
+        : 0;
+    return {
+        exerciseCount: item.exercises.length,
+        setCount,
+        workingSetCount,
+        totalVolume: Math.round(totalVolume * 10) / 10,
+        cardioMinutes,
+        cardioCount: item.cardioSessions.length,
+        durationMinutes: item.durationOverride != null ? Math.max(0, Math.round(item.durationOverride)) : clockMinutes
+    };
+}
+
+/**
+ * A peer's workout without its sets.
+ *
+ * `exercises` and `cardioSessions` are ABSENT, not empty. An empty array would let
+ * every unguarded consumer quietly compute zero — a teammate showing 0 kg lifted looks
+ * like a bad workout, not like a bug. A missing key throws on first dereference, which
+ * is the only way a mistake here gets noticed.
+ */
+export function serializeWorkoutSummary(item: WorkoutRow) {
+    return {
+        id: item.id,
+        userId: item.userId,
+        date: dateInput(item.date),
+        title: item.title,
+        status: item.status,
+        workoutType: item.workoutType,
+        notes: item.notes || "",
+        ...workoutAggregates(item)
+    };
+}
+
 export function serializeWorkout(item: WorkoutRow) {
     return {
+        hydrated: true as const,
+        ...workoutAggregates(item),
         id: item.id,
         userId: item.userId,
         date: dateInput(item.date),

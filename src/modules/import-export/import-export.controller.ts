@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Post, Query, UseGuards, UseInterceptors } from "@nestjs/common";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { ApprovedGuard } from "../../shared/approved.guard";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
@@ -10,10 +10,22 @@ import { ImportExportService } from "./import-export.service";
 export class ImportExportController {
     constructor(private readonly importExportService: ImportExportService) {}
 
+    // `shape` is read as a primitive @Query, never through a DTO. ValidationPipe runs
+    // with forbidNonWhitelisted, so a DTO here would 400 on any query key it did not
+    // declare — and the whole point of the parameter is that an old client omits it and
+    // a new client sending it to an old server is harmlessly ignored. That is what makes
+    // the two sides deployable in either order.
     @Get("export")
     @UseInterceptors(PayloadMetricsInterceptor)
-    export(@CurrentUser() user: RequestUser) {
-        return this.importExportService.export(user);
+    export(
+        @CurrentUser() user: RequestUser,
+        @Query("shape") shape?: string,
+        @Query("ownLimit") ownLimit?: string
+    ) {
+        return this.importExportService.export(user, {
+            windowed: shape === "windowed",
+            ownLimit: Number(ownLimit) || undefined
+        });
     }
 
     // NOTE: the monolithic `POST /import` was removed. express.json caps bodies at

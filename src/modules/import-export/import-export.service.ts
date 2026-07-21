@@ -6,14 +6,42 @@ import { isAdminUser, isSuperAdminUser } from "../../shared/admin";
 import { duplicateKeys, normalizeExerciseCatalogPayload } from "./exercise-catalog-importer";
 // Shared with /scoring so both feed the scoring kernel identical data — two
 // near-identical serializers would drift and nobody would notice until a level moved.
-import { dateInput, numberValue, serializeWorkout } from "../../shared/serialize";
+import { dateInput, numberValue, serializeWorkout, serializeWorkoutSummary } from "../../shared/serialize";
+import { WORKOUT_PAGE_ORDER, encodeCursor } from "../../shared/cursor";
+import { ScoringService } from "../scoring/scoring.service";
 
 @Injectable()
 export class ImportExportService {
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly scoring: ScoringService
+    ) {}
 
-    async export(user: RequestUser) {
+    /**
+     * The boot payload.
+     *
+     * Two shapes behind one route, so client and server can deploy in either order:
+     *
+     *   legacy (default)  version 3, every workout of every user, fully hydrated.
+     *   windowed          version 4. Own workouts hydrated but limited to a window;
+     *                     peers reduced to summaries carrying aggregates and no sets;
+     *                     progression computed server-side and shipped in `scoring`.
+     *
+     * The windowed shape only makes sense together with server-side scoring: the client
+     * derives XP, levels, records and all 39 achievements from the complete lifetime
+     * corpus, so truncating history without replacing that computation would silently
+     * give every member a wrong-but-plausible level.
+     */
+    async export(user: RequestUser, options: { windowed?: boolean; ownLimit?: number } = {}) {
         const requesterIsAdmin = isAdminUser(user);
+        const windowed = options.windowed === true;
+        // 30 covers the history list, the recent-workouts strips and several weeks of
+        // scrollback without a second request for the overwhelmingly common session.
+        const ownLimit = Math.min(Math.max(options.ownLimit || 30, 1), 200);
+        // Peers are needed for the calendar, the day sheet and the activity feed, all of
+        // which look at recent activity only. Sixty days keeps those surfaces intact
+        // while dropping the long tail that dominates the payload.
+        const peerWindowStart = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
         // strengthStandards intentionally not exported anymore — the demo standards
         // are dropped from the payload; the frontend links to real external
         // strength-standard references instead.
@@ -26,11 +54,19 @@ export class ImportExportService {
             // to every client and displayed nowhere.
             this.prisma.userBodyweightEntry.findMany({ where: { userId: user.id }, orderBy: { date: "asc" } }),
             this.prisma.workout.findMany({
+                // In windowed mode this fetch is scoped to the caller and limited; one
+                // extra row is taken so we can tell "there is another page" from "this
+                // is the end" without a second count query.
+                where: windowed ? { userId: user.id } : undefined,
+                take: windowed ? ownLimit + 1 : undefined,
                 include: {
                     exercises: { include: { sets: true }, orderBy: { order: "asc" } },
                     cardioSessions: true
                 },
-                orderBy: { date: "desc" }
+                // date DESC is load-bearing beyond paging: the scoring kernel resolves
+                // tied one-rep-max records by visit order, so ascending input would move
+                // personal-record dates. See shared/serialize.ts.
+                orderBy: WORKOUT_PAGE_ORDER
             })
         ]);
 
@@ -70,8 +106,66 @@ export class ImportExportService {
             featureRequests = [];
         }
 
+        // --- windowed extras -------------------------------------------------------
+        // Fetched only for the windowed shape so the legacy path costs exactly what it
+        // did before and cannot regress.
+        let ownWorkouts = workouts;
+        let peerSummaries: ReturnType<typeof serializeWorkoutSummary>[] = [];
+        let workoutsCursor: string | null = null;
+        let scoring: Awaited<ReturnType<ScoringService["scoreEveryone"]>> | null = null;
+
+        if (windowed) {
+            // The extra row taken above answers "is there more?" — drop it before
+            // serializing, and cursor from the last row actually returned.
+            const hasMore = workouts.length > ownLimit;
+            ownWorkouts = hasMore ? workouts.slice(0, ownLimit) : workouts;
+            const last = ownWorkouts[ownWorkouts.length - 1];
+            workoutsCursor = hasMore && last ? encodeCursor(last) : null;
+
+            const [activeOutsideWindow, peers, computed] = await Promise.all([
+                // An in-progress workout must always be present regardless of the
+                // window, or a member who leaves one running and comes back weeks later
+                // opens the app to no active session and starts a duplicate.
+                this.prisma.workout.findMany({
+                    where: {
+                        userId: user.id,
+                        status: "active",
+                        id: { notIn: ownWorkouts.map((item) => item.id) }
+                    },
+                    include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true }
+                }),
+                // Peers as summaries: enough for the calendar, day sheet and activity
+                // feed, without a single set crossing the wire.
+                this.prisma.workout.findMany({
+                    where: { userId: { not: user.id }, date: { gte: peerWindowStart } },
+                    include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true },
+                    orderBy: WORKOUT_PAGE_ORDER
+                }),
+                this.scoring.scoreEveryone()
+            ]);
+
+            ownWorkouts = [...activeOutsideWindow, ...ownWorkouts];
+            peerSummaries = peers.map(serializeWorkoutSummary);
+
+            // Strip peer XP ledgers. Only the caller's own ledger is ever rendered (the
+            // Прокачка tab); for everyone else the leaderboard needs nothing but the xp
+            // total and the level. Measured on production this is 18.6 KB of the 45.6 KB
+            // scoring block, almost all of it for people whose ledger nobody can open.
+            scoring = {
+                ...computed,
+                users: Object.fromEntries(Object.entries(computed.users).map(([id, entry]) => [
+                    id,
+                    id === user.id ? entry : { ...entry, xpLedger: [] }
+                ]))
+            };
+        }
+
         return {
-            version: 3,
+            // Bumped so a client can tell the shapes apart. databaseProblem accepts
+            // version >= 3, so an old client handed a v4 payload still boots.
+            version: windowed ? 4 : 3,
+            shape: windowed ? "windowed" : "full",
+            ...(windowed ? { workoutsCursor, scoring } : {}),
             currentUserId: user.id,
             users: users.map((item) => ({
                 id: item.id,
@@ -134,7 +228,9 @@ export class ImportExportService {
                 bodyweight: numberValue(item.bodyweight, 0),
                 notes: item.notes || ""
             })),
-            workouts: workouts.map(serializeWorkout),
+            // Own workouts hydrated; peers as summaries with aggregates but no sets.
+            // In legacy mode peerSummaries is empty and this is every workout, as before.
+            workouts: [...ownWorkouts.map(serializeWorkout), ...peerSummaries],
             featureRequests: featureRequests.map((item) => ({
                 id: item.id,
                 userId: item.userId,
