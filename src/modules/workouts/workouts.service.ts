@@ -10,18 +10,6 @@ import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, Create
 export class WorkoutsService {
     constructor(private readonly prisma: PrismaService) {}
 
-    findAll(query: Record<string, string>) {
-        return this.prisma.workout.findMany({
-            where: {
-                userId: query.userId,
-                status: query.status as WorkoutStatus | undefined,
-                workoutType: query.workoutType
-            },
-            include: this.includeWorkout(),
-            orderBy: { date: "desc" }
-        });
-    }
-
     async findOne(id: string) {
         const workout = await this.prisma.workout.findUnique({
             where: { id },
@@ -326,7 +314,10 @@ export class WorkoutsService {
 
     private includeWorkout() {
         return {
-            user: { include: { profile: true } },
+            // `select`, not `include`: the full User row carries email (and the profile
+            // carries height/bodyweight), which /export deliberately redacts for peers.
+            // Phase 6 hydrates peer workouts through findOne, so this must not leak.
+            user: { select: { id: true, displayName: true, avatarUrl: true } },
             exercises: { include: { exercise: true, sets: true }, orderBy: { order: "asc" as const } },
             cardioSessions: true
         };

@@ -11,11 +11,7 @@ import { ExercisesModule } from "./modules/exercises/exercises.module";
 import { WorkoutsModule } from "./modules/workouts/workouts.module";
 import { WorkoutTemplatesModule } from "./modules/workout-templates/workout-templates.module";
 import { BodyweightModule } from "./modules/bodyweight/bodyweight.module";
-import { PersonalRecordsModule } from "./modules/personal-records/personal-records.module";
 import { AchievementsModule } from "./modules/achievements/achievements.module";
-import { RankingsModule } from "./modules/rankings/rankings.module";
-import { TeamStatsModule } from "./modules/team-stats/team-stats.module";
-import { StatsModule } from "./modules/stats/stats.module";
 import { ImportExportModule } from "./modules/import-export/import-export.module";
 import { FeedbackModule } from "./modules/feedback/feedback.module";
 import { AiModule } from "./modules/ai/ai.module";
@@ -31,11 +27,7 @@ import { AiModule } from "./modules/ai/ai.module";
         WorkoutsModule,
         WorkoutTemplatesModule,
         BodyweightModule,
-        PersonalRecordsModule,
         AchievementsModule,
-        RankingsModule,
-        TeamStatsModule,
-        StatsModule,
         ImportExportModule,
         FeedbackModule,
         AiModule

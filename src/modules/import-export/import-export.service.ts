@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable } from "@nestjs/common";
 import { WorkoutSetType, WorkoutStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
@@ -17,7 +17,11 @@ export class ImportExportService {
         const [users, exercises, bodyweightEntries, workouts] = await Promise.all([
             this.prisma.user.findMany({ include: { profile: true }, orderBy: { createdAt: "asc" } }),
             this.prisma.exercise.findMany({ orderBy: { name: "asc" } }),
-            this.prisma.userBodyweightEntry.findMany({ orderBy: { date: "asc" } }),
+            // Scoped to the caller: bodyweight is health data and no peer surface renders
+            // it. bodyweightChart (app.js) has exactly one call site, inside profile(),
+            // always with currentUser().id — so every other user's log was transmitted
+            // to every client and displayed nowhere.
+            this.prisma.userBodyweightEntry.findMany({ where: { userId: user.id }, orderBy: { date: "asc" } }),
             this.prisma.workout.findMany({
                 include: {
                     exercises: { include: { sets: true }, orderBy: { order: "asc" } },
@@ -180,110 +184,33 @@ export class ImportExportService {
         };
     }
 
-    async import(user: RequestUser, payload: any) {
-        const workouts = Array.isArray(payload?.workouts) ? payload.workouts.filter((item: any) => item.userId === user.id) : [];
-        const bodyweightEntries = Array.isArray(payload?.bodyweightEntries) ? payload.bodyweightEntries.filter((item: any) => item.userId === user.id) : [];
-        const customExercises = Array.isArray(payload?.exercises) ? payload.exercises.filter((item: any) => item.isCustom && item.createdByUserId === user.id) : [];
-
-        await this.prisma.$transaction(async (transaction) => {
-            for (const exercise of customExercises) {
-                await transaction.exercise.upsert({
-                    where: { id: exercise.id },
-                    update: exerciseData(exercise, user.id),
-                    create: { id: exercise.id, slug: slugify(exercise.name), ...exerciseData(exercise, user.id) }
-                });
-            }
-
-            await transaction.userBodyweightEntry.deleteMany({ where: { userId: user.id } });
-            for (const entry of bodyweightEntries) {
-                await transaction.userBodyweightEntry.create({
-                    data: {
-                        id: entry.id,
-                        userId: user.id,
-                        date: parseDate(entry.date),
-                        bodyweight: Number(entry.bodyweight) || 0,
-                        notes: entry.notes || null
-                    }
-                });
-            }
-
-            await transaction.workout.deleteMany({ where: { userId: user.id } });
-            for (const workout of workouts) {
-                await transaction.workout.create({
-                    data: {
-                        id: workout.id,
-                        userId: user.id,
-                        date: parseDate(workout.date),
-                        title: workout.title || "Тренування",
-                        status: (workout.status || "planned") as WorkoutStatus,
-                        workoutType: workout.workoutType || "custom",
-                        startedAt: workout.startedAt ? parseDate(workout.startedAt) : null,
-                        finishedAt: workout.finishedAt ? parseDate(workout.finishedAt) : null,
-                        notes: workout.notes || null,
-                        exercises: {
-                            create: (workout.exercises || []).map((exercise: any, index: number) => ({
-                                id: exercise.id,
-                                exerciseId: exercise.exerciseId,
-                                order: exercise.order || index + 1,
-                                notes: exercise.notes || null,
-                                sets: {
-                                    create: (exercise.sets || []).map((set: any) => ({
-                                        id: set.id,
-                                        type: (set.type || "working") as WorkoutSetType,
-                                        weight: Number(set.weight) || 0,
-                                        repetitions: Number(set.repetitions) || 0,
-                                        durationSeconds: set.durationSeconds === undefined || set.durationSeconds === null ? null : Math.round(Number(set.durationSeconds)),
-                                        rpe: Number(set.rpe) || null,
-                                        restSeconds: Number(set.restSeconds) || 90,
-                                        isCompleted: Boolean(set.isCompleted),
-                                        notes: set.notes || null
-                                    }))
-                                }
-                            }))
-                        },
-                        cardioSessions: {
-                            create: (workout.cardioSessions || []).map((session: any) => ({
-                                id: session.id,
-                                type: session.type || "treadmill",
-                                durationMinutes: Number(session.durationMinutes) || 0,
-                                distance: Number(session.distance) || null,
-                                calories: Number(session.calories) || null,
-                                averageHeartRate: Number(session.averageHeartRate) || null,
-                                intensity: session.intensity || null,
-                                notes: session.notes || null
-                            }))
-                        }
-                    }
-                });
-            }
-        });
-
-        return {
-            ok: true,
-            imported: {
-                workouts: workouts.length,
-                bodyweightEntries: bodyweightEntries.length,
-                customExercises: customExercises.length
-            }
-        };
-    }
-
     async startImport(user: RequestUser, payload: any) {
+        // This wipes the named resources before any replacement chunk is written, so it
+        // is gated twice: an explicit resource list (readImportResources throws otherwise)
+        // and an explicit confirmation token, so no accidental or empty POST can reach it.
+        if (payload?.confirm !== "replace") {
+            throw new BadRequestException('confirm must be "replace" to erase existing data');
+        }
+
         const resources = readImportResources(payload?.resources);
 
-        await this.prisma.$transaction(async (transaction) => {
-            if (resources.includes("workouts")) {
-                await transaction.workout.deleteMany({ where: { userId: user.id } });
-            }
+        // Batch-array form, not the interactive callback — see the note in
+        // workouts.service.ts: the production pooler (Neon/pgbouncer, transaction mode)
+        // does not support interactive transactions and hangs until the function times out.
+        const operations: any[] = [];
+        if (resources.includes("workouts")) {
+            operations.push(this.prisma.workout.deleteMany({ where: { userId: user.id } }));
+        }
 
-            if (resources.includes("bodyweightEntries")) {
-                await transaction.userBodyweightEntry.deleteMany({ where: { userId: user.id } });
-            }
+        if (resources.includes("bodyweightEntries")) {
+            operations.push(this.prisma.userBodyweightEntry.deleteMany({ where: { userId: user.id } }));
+        }
 
-            if (resources.includes("customExercises")) {
-                await transaction.exercise.deleteMany({ where: { isCustom: true, createdByUserId: user.id } });
-            }
-        });
+        if (resources.includes("customExercises")) {
+            operations.push(this.prisma.exercise.deleteMany({ where: { isCustom: true, createdByUserId: user.id } }));
+        }
+
+        await this.prisma.$transaction(operations);
 
         return {
             ok: true,
@@ -403,17 +330,25 @@ function exerciseData(exercise: any, userId: string) {
     };
 }
 
-function readImportResources(resources: unknown) {
+// A restore must name exactly what it replaces. This used to default to ALL THREE
+// resources when `resources` was absent or unrecognised, which made a ~30-byte
+// `POST /import/start {}` silently delete every workout, bodyweight entry and custom
+// exercise belonging to the caller. Never widen a destructive scope on missing input.
+export function readImportResources(resources: unknown) {
     const allowedResources = ["customExercises", "bodyweightEntries", "workouts"];
     if (!Array.isArray(resources)) {
-        return allowedResources;
+        throw new BadRequestException("resources must be a non-empty array naming what to replace");
     }
 
     const requestedResources = resources
         .map((item) => String(item))
         .filter((item) => allowedResources.includes(item));
 
-    return requestedResources.length > 0 ? requestedResources : allowedResources;
+    if (requestedResources.length === 0) {
+        throw new BadRequestException(`resources must name at least one of: ${allowedResources.join(", ")}`);
+    }
+
+    return [...new Set(requestedResources)];
 }
 
 async function importCustomExercises(transaction: any, userId: string, customExercises: any[]) {

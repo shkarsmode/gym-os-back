@@ -23,9 +23,17 @@ const INDEX_STATEMENTS = [
     `CREATE INDEX IF NOT EXISTS "WorkoutTemplateExercise_exerciseId_idx" ON "WorkoutTemplateExercise" ("exerciseId");`,
     `CREATE INDEX IF NOT EXISTS "Workout_userId_status_idx" ON "Workout" ("userId", "status");`,
     `CREATE INDEX IF NOT EXISTS "Workout_userId_date_idx" ON "Workout" ("userId", "date");`,
-    // Created LAST so its presence is the marker that the whole index pass finished.
     `CREATE INDEX IF NOT EXISTS "Workout_userId_idx" ON "Workout" ("userId");`,
 ];
+
+// BUMP THIS whenever INDEX_STATEMENTS changes.
+//
+// This replaces a "does the last index exist?" marker check. That marker was created
+// last on purpose, but it meant that once it existed the whole pass was skipped
+// forever — so every index appended to the array afterwards was silently never
+// created on any database that had already booted once. The failure was invisible:
+// no error, no log, just a query plan that never got its index.
+const INDEX_SET_VERSION = 1;
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
@@ -79,18 +87,33 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "preferences" JSONB;'
             );
 
-            // Index creation is 19 round-trips, so gate it behind a single cheap
-            // marker check: once the last index exists, the whole pass is done.
-            const marker = (await this.$queryRawUnsafe(
-                `SELECT to_regclass('public."Workout_userId_idx"') AS reg;`
-            )) as Array<{ reg: string | null }>;
-            if (marker?.[0]?.reg) {
+            // Index creation is ~19 round-trips, so it stays gated — but on a version
+            // counter, not on the existence of one index. Bumping INDEX_SET_VERSION is
+            // what makes a newly added index actually get created on an existing DB.
+            await this.$executeRawUnsafe(
+                'CREATE TABLE IF NOT EXISTS "_gymos_schema_version" ("id" INTEGER PRIMARY KEY, "indexVersion" INTEGER NOT NULL DEFAULT 0);'
+            );
+            await this.$executeRawUnsafe(
+                'INSERT INTO "_gymos_schema_version" ("id", "indexVersion") VALUES (1, 0) ON CONFLICT ("id") DO NOTHING;'
+            );
+
+            const versionRows = (await this.$queryRawUnsafe(
+                'SELECT "indexVersion" FROM "_gymos_schema_version" WHERE "id" = 1;'
+            )) as Array<{ indexVersion: number | null }>;
+            const appliedVersion = Number(versionRows?.[0]?.indexVersion ?? 0);
+            if (appliedVersion >= INDEX_SET_VERSION) {
                 return;
             }
+
+            // Every statement is CREATE INDEX IF NOT EXISTS, so re-running the full set
+            // on a database that already has them is cheap and self-healing.
             for (const statement of INDEX_STATEMENTS) {
                 await this.$executeRawUnsafe(statement);
             }
-            this.logger.log("ensureSchema: indexes reconciled");
+            await this.$executeRawUnsafe(
+                `UPDATE "_gymos_schema_version" SET "indexVersion" = ${INDEX_SET_VERSION} WHERE "id" = 1;`
+            );
+            this.logger.log(`ensureSchema: indexes reconciled to v${INDEX_SET_VERSION}`);
         } catch (error) {
             this.logger.error("ensureSchema failed", error as Error);
         }
