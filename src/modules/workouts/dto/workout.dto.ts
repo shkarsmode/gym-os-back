@@ -258,4 +258,12 @@ export class SaveWorkoutDto {
     @ValidateNested({ each: true })
     @Type(() => CreateCardioSessionDto)
     cardioSessions?: CreateCardioSessionDto[];
+
+    // Acknowledges that replacing a non-empty workout with zero exercises is intended.
+    // Without it saveFull answers 409 rather than erasing the sets. Must be declared
+    // here: ValidationPipe runs with forbidNonWhitelisted, so an undeclared property
+    // is a 400 rather than being ignored.
+    @IsOptional()
+    @IsBoolean()
+    confirmEmpty?: boolean;
 }

@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { WorkoutSetType, WorkoutStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { parseDateInput } from "../../shared/parse-date";
@@ -46,10 +46,34 @@ export class WorkoutsService {
     async saveFull(userId: string, id: string, dto: SaveWorkoutDto, isAdmin = false, tier: QuotaTier = "free") {
         const existing = await this.prisma.workout.findUnique({
             where: { id },
-            select: { id: true, userId: true, startedAt: true, finishedAt: true }
+            select: {
+                id: true,
+                userId: true,
+                startedAt: true,
+                finishedAt: true,
+                _count: { select: { exercises: true } }
+            }
         });
         if (existing && existing.userId !== userId && !isAdmin) {
             throw new ForbiddenException("Cannot edit another user's workout");
+        }
+
+        // This endpoint is a destructive full replace: everything below deletes every
+        // set, exercise and cardio session of the workout and recreates them from the
+        // payload. An empty exercises array against a workout that has some therefore
+        // erases real training data in one transaction.
+        //
+        // A cardio-only workout legitimately has none, and clearing a workout by hand
+        // is legitimate too — so this is not a ban, it is a confirmation. It is the only
+        // guard that survives a client-side bug, which matters because the client is
+        // about to start holding summary-shaped workout rows that carry no sets.
+        const wouldEraseExercises =
+            existing && existing._count.exercises > 0 && (dto.exercises?.length ?? 0) === 0;
+        if (wouldEraseExercises && dto.confirmEmpty !== true) {
+            throw new ConflictException({
+                code: "WOULD_ERASE_EXERCISES",
+                message: `Refusing to replace ${existing._count.exercises} exercise(s) with an empty list. Resend with confirmEmpty: true if this is intended.`
+            });
         }
         // When an admin edits someone else's workout, keep it owned by the original user.
         const ownerId = existing ? existing.userId : userId;
