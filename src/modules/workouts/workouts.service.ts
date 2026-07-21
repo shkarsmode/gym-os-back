@@ -10,12 +10,24 @@ import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, Create
 export class WorkoutsService {
     constructor(private readonly prisma: PrismaService) {}
 
-    async findOne(id: string) {
+    // Scoped to the caller. This is about to become the peer-hydration path (opening a
+    // teammate's workout fetches it here instead of receiving every set in the boot
+    // payload), so it decides what one member may read of another's.
+    //
+    // Own workouts: always. Peers: completed ones only — those already appear in the
+    // team feed and calendar, so the sets behind them are not new information. A peer's
+    // planned or in-progress workout stays private; 404 rather than 403 so the response
+    // does not confirm the id exists.
+    async findOne(id: string, callerId: string, isAdmin = false) {
         const workout = await this.prisma.workout.findUnique({
             where: { id },
             include: this.includeWorkout()
         });
         if (!workout) {
+            throw new NotFoundException("Workout not found");
+        }
+        const isOwner = workout.userId === callerId;
+        if (!isOwner && !isAdmin && workout.status !== "completed") {
             throw new NotFoundException("Workout not found");
         }
         return workout;

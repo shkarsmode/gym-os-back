@@ -19,8 +19,8 @@ export class WorkoutsController {
     // bypassing the redaction /export applies. It had zero callers.
 
     @Get(":id")
-    findOne(@Param("id") id: string) {
-        return this.workoutsService.findOne(id);
+    findOne(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+        return this.workoutsService.findOne(id, user.id, isAdminUser(user));
     }
 
     @Post()
