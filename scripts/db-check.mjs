@@ -38,8 +38,7 @@ if (!directUrl) {
         "WARNING: DATABASE_URL_UNPOOLED is not set.",
         "schema.prisma declares it as `directUrl`. Neon's pooled endpoint (pgbouncer in",
         "transaction mode) cannot take the advisory locks migrations need, so schema",
-        "changes will fail — and scripts/vercel-build.mjs runs them non-fatally, so they",
-        "fail silently. Set this before attempting any migration.",
+        "changes will fail. Set this before attempting any migration.",
         ""
     ].join("\n"));
 }
