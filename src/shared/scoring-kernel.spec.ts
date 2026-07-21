@@ -20,7 +20,7 @@ import * as path from "node:path";
  *
  * To sync: edit lib/*.js in the frontend, then `node scripts/sync-kernel.mjs`.
  */
-const here = __dirname;
+const here = path.join(__dirname, "scoring");
 const manifest = JSON.parse(fs.readFileSync(path.join(here, "kernel.checksums.json"), "utf8"));
 
 describe("vendored scoring kernel", () => {

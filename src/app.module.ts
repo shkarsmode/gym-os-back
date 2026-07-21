@@ -12,6 +12,7 @@ import { WorkoutsModule } from "./modules/workouts/workouts.module";
 import { WorkoutTemplatesModule } from "./modules/workout-templates/workout-templates.module";
 import { BodyweightModule } from "./modules/bodyweight/bodyweight.module";
 import { AchievementsModule } from "./modules/achievements/achievements.module";
+import { ScoringModule } from "./modules/scoring/scoring.module";
 import { ImportExportModule } from "./modules/import-export/import-export.module";
 import { FeedbackModule } from "./modules/feedback/feedback.module";
 import { AiModule } from "./modules/ai/ai.module";
@@ -28,6 +29,7 @@ import { AiModule } from "./modules/ai/ai.module";
         WorkoutTemplatesModule,
         BodyweightModule,
         AchievementsModule,
+        ScoringModule,
         ImportExportModule,
         FeedbackModule,
         AiModule

@@ -18,7 +18,11 @@ import { pathToFileURL } from "node:url";
  * The kernel stays untranspiled on purpose: it must remain byte-identical to the
  * browser's copy, because both runtimes compute XP, levels, records and achievements
  * from it and any divergence shows a member two different levels with nothing failing.
- * See kernel-parity.spec.ts and scripts/sync-kernel.mjs.
+ * See scoring-kernel.spec.ts and scripts/sync-kernel.mjs.
+ *
+ * This file deliberately lives OUTSIDE src/shared/scoring/: that directory is marked
+ * "type": "module", and tsc emits this loader as CommonJS. Compiled into an ESM-marked
+ * directory it fails at load with "exports is not defined in ES module scope".
  */
 const dynamicImport = new Function("specifier", "return import(specifier)") as (specifier: string) => Promise<ScoringKernel>;
 
@@ -52,7 +56,7 @@ export function loadScoringKernel(): Promise<ScoringKernel> {
     if (!cached) {
         // A file URL, not a bare path: on Windows an absolute path like C:\... is read
         // as a protocol by the ESM resolver.
-        cached = dynamicImport(pathToFileURL(path.join(__dirname, "scoring.js")).href);
+        cached = dynamicImport(pathToFileURL(path.join(__dirname, "scoring", "scoring.js")).href);
     }
     return cached;
 }

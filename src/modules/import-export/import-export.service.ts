@@ -4,6 +4,9 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
 import { isAdminUser, isSuperAdminUser } from "../../shared/admin";
 import { duplicateKeys, normalizeExerciseCatalogPayload } from "./exercise-catalog-importer";
+// Shared with /scoring so both feed the scoring kernel identical data — two
+// near-identical serializers would drift and nobody would notice until a level moved.
+import { dateInput, numberValue, serializeWorkout } from "../../shared/serialize";
 
 @Injectable()
 export class ImportExportService {
@@ -131,45 +134,7 @@ export class ImportExportService {
                 bodyweight: numberValue(item.bodyweight, 0),
                 notes: item.notes || ""
             })),
-            workouts: workouts.map((item) => ({
-                id: item.id,
-                userId: item.userId,
-                date: dateInput(item.date),
-                title: item.title,
-                status: item.status,
-                workoutType: item.workoutType,
-                startedAt: item.startedAt?.toISOString() || null,
-                finishedAt: item.finishedAt?.toISOString() || null,
-                durationOverride: item.durationOverride ?? null,
-                notes: item.notes || "",
-                exercises: item.exercises.map((exercise) => ({
-                    id: exercise.id,
-                    exerciseId: exercise.exerciseId,
-                    order: exercise.order,
-                    notes: exercise.notes || "",
-                    sets: exercise.sets.map((set) => ({
-                        id: set.id,
-                        type: set.type,
-                        weight: numberValue(set.weight, 0),
-                        repetitions: set.repetitions,
-                        durationSeconds: set.durationSeconds ?? null,
-                        rpe: numberValue(set.rpe, 0),
-                        restSeconds: set.restSeconds,
-                        isCompleted: set.isCompleted,
-                        notes: set.notes || ""
-                    }))
-                })),
-                cardioSessions: item.cardioSessions.map((session) => ({
-                    id: session.id,
-                    type: session.type,
-                    durationMinutes: session.durationMinutes,
-                    distance: numberValue(session.distance, 0),
-                    calories: session.calories || 0,
-                    averageHeartRate: session.averageHeartRate || 0,
-                    intensity: session.intensity || "medium",
-                    notes: session.notes || ""
-                }))
-            })),
+            workouts: workouts.map(serializeWorkout),
             featureRequests: featureRequests.map((item) => ({
                 id: item.id,
                 userId: item.userId,
@@ -445,14 +410,8 @@ function colorFor(value: string) {
     return palette[index];
 }
 
-function numberValue(value: unknown, fallback: number) {
-    const result = Number(value);
-    return Number.isFinite(result) ? result : fallback;
-}
-
-function dateInput(date: Date) {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
+// numberValue and dateInput now live in ../../shared/serialize so /export and /scoring
+// cannot drift apart in how they present the same rows to the scoring kernel.
 
 function parseDate(value: string) {
     const date = new Date(value);
