@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { ApprovedGuard } from "../../shared/approved.guard";
@@ -13,10 +13,10 @@ import { WorkoutsService } from "./workouts.service";
 export class WorkoutsController {
     constructor(private readonly workoutsService: WorkoutsService) {}
 
-    @Get()
-    findAll(@Query() query: Record<string, string>) {
-        return this.workoutsService.findAll(query);
-    }
+    // NOTE: `GET /workouts` (findAll) was removed. It took `userId` straight from the
+    // query string with no ownership check, so any approved member could read anyone's
+    // full workout history — with the owner's raw User row (including email) inlined,
+    // bypassing the redaction /export applies. It had zero callers.
 
     @Get(":id")
     findOne(@Param("id") id: string) {
