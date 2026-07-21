@@ -1,0 +1,4 @@
+{
+    "//": "Marks this directory as ESM. The vendored kernel files are byte-identical copies of the frontend's lib/*.js and must stay that way — see README.md here. Without this marker Node re-parses them as ESM by content sniffing on every load, which is slower and relies on heuristics. The backend itself stays CommonJS; these are reached through dynamic import().",
+    "type": "module"
+}

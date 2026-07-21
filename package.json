@@ -4,7 +4,7 @@
     "private": true,
     "description": "GymOS NestJS API",
     "scripts": {
-        "build": "node ./node_modules/@nestjs/cli/bin/nest.js build",
+        "build": "node ./node_modules/@nestjs/cli/bin/nest.js build && node scripts/verify-kernel.mjs dist",
         "postinstall": "node ./scripts/postinstall.mjs",
         "start": "node dist/main.js",
         "test": "jest",
@@ -15,7 +15,9 @@
         "prisma:validate": "node ./node_modules/prisma/build/index.js validate",
         "prisma:push": "node ./node_modules/prisma/build/index.js db push",
         "prisma:migrate": "node ./node_modules/prisma/build/index.js migrate dev",
-        "seed": "node --import tsx prisma/seed.ts"
+        "seed": "node --import tsx prisma/seed.ts",
+        "verify:kernel": "node scripts/verify-kernel.mjs",
+        "sync:kernel": "node scripts/sync-kernel.mjs"
     },
     "dependencies": {
         "@google/genai": "^2.11.0",
