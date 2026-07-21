@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Post, Query, UseGuards, UseInterceptors } from "@nestjs/common";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { ApprovedGuard } from "../../shared/approved.guard";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
@@ -20,11 +20,17 @@ export class ImportExportController {
     export(
         @CurrentUser() user: RequestUser,
         @Query("shape") shape?: string,
-        @Query("ownLimit") ownLimit?: string
+        @Query("ownLimit") ownLimit?: string,
+        // Not a real HTTP 304: the catalog is one section of a larger body, so the
+        // response still carries workouts and scoring. The header only tells us whether
+        // the caller already has this exact catalog, in which case that section is
+        // omitted and the client keeps what it cached.
+        @Headers("if-none-match") ifNoneMatch?: string
     ) {
         return this.importExportService.export(user, {
             windowed: shape === "windowed",
-            ownLimit: Number(ownLimit) || undefined
+            ownLimit: Number(ownLimit) || undefined,
+            ifNoneMatch
         });
     }
 

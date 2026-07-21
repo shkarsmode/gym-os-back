@@ -32,7 +32,26 @@ export class ImportExportService {
      * corpus, so truncating history without replacing that computation would silently
      * give every member a wrong-but-plausible level.
      */
-    async export(user: RequestUser, options: { windowed?: boolean; ownLimit?: number } = {}) {
+    /**
+     * Weak validator for the caller's view of the catalog.
+     *
+     * Includes the caller id and the latest reaction timestamp because the catalog rows
+     * are personalised by `myReaction`. Weak (W/) rather than strong: this identifies
+     * semantic equivalence of the catalog slice, not a byte-exact whole response.
+     */
+    private async buildCatalogEtag(userId: string, count: number) {
+        const [latest, reactionWatermark] = await Promise.all([
+            this.prisma.exercise.aggregate({ _max: { updatedAt: true } }),
+            this.prisma.exerciseReaction
+                .aggregate({ where: { userId }, _max: { updatedAt: true } })
+                .catch(() => ({ _max: { updatedAt: null as Date | null } }))
+        ]);
+        const catalogStamp = latest._max.updatedAt?.getTime() ?? 0;
+        const reactionStamp = reactionWatermark._max.updatedAt?.getTime() ?? 0;
+        return `W/"cat-${count}-${catalogStamp}-${reactionStamp}-${userId}"`;
+    }
+
+    async export(user: RequestUser, options: { windowed?: boolean; ownLimit?: number; ifNoneMatch?: string } = {}) {
         const requesterIsAdmin = isAdminUser(user);
         const windowed = options.windowed === true;
         // 30 covers the history list, the recent-workouts strips and several weeks of
@@ -105,6 +124,17 @@ export class ImportExportService {
         } catch (error) {
             featureRequests = [];
         }
+
+        // --- catalog ETag ----------------------------------------------------------
+        // The exercise catalog is the largest slice of the payload (65 KB of 164 on
+        // production) and changes rarely, but it cannot be cached with a naive
+        // max(updatedAt) tag: each row carries this caller's own `myReaction`, and
+        // reacting writes to ExerciseReaction while touching no Exercise row. A tag
+        // built from Exercise alone would then serve a 304 with a stale heart — or,
+        // worse, one user's reaction state to another. The caller id and a reaction
+        // watermark are therefore part of the tag.
+        const catalogEtag = await this.buildCatalogEtag(user.id, exercises.length);
+        const catalogUnchanged = windowed && options.ifNoneMatch === catalogEtag;
 
         // --- windowed extras -------------------------------------------------------
         // Fetched only for the windowed shape so the legacy path costs exactly what it
@@ -191,7 +221,10 @@ export class ImportExportService {
                 createdAt: item.createdAt.toISOString(),
                 updatedAt: item.updatedAt.toISOString()
             })),
-            exercises: exercises.map((item) => ({
+            ...(windowed ? { catalogEtag } : {}),
+            // Omitted, not empty, when the caller already has this exact catalog: the
+            // client keeps what it has. An empty array would wipe its catalog instead.
+            ...(catalogUnchanged ? {} : { exercises: exercises.map((item) => ({
                 id: item.id,
                 name: item.name,
                 aliases: item.aliases,
@@ -220,7 +253,7 @@ export class ImportExportService {
                 myReaction: myReactionMap.get(item.id) || null,
                 createdAt: item.createdAt.toISOString(),
                 updatedAt: item.updatedAt.toISOString()
-            })),
+            })) }),
             bodyweightEntries: bodyweightEntries.map((item) => ({
                 id: item.id,
                 userId: item.userId,
