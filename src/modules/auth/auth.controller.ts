@@ -49,6 +49,10 @@ export class AuthController {
         const impersonatedBy = payload?.imp || null;
         return {
             user,
+            // `canImpersonate` keeps the owner check server-side: the SPA shows the
+            // button off this flag instead of hardcoding owner emails, and a
+            // panel-promoted admin simply never sees it.
+            canImpersonate: !impersonatedBy && isSuperAdminUser(user),
             impersonation: impersonatedBy
                 ? { active: true, adminId: impersonatedBy, adminEmail: payload?.impEmail || null }
                 : { active: false }
