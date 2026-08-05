@@ -17,7 +17,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
         });
     }
 
-    async validate(payload: { sub: string; email: string; displayName: string }) {
+    async validate(payload: { sub: string; email: string; displayName: string; imp?: string; impEmail?: string }) {
         // Read the fresh approval flag + role so admin changes take effect without re-login.
         const dbUser = await this.prisma.user.findUnique({
             where: { id: payload.sub },
@@ -28,7 +28,12 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
             email: payload.email,
             displayName: payload.displayName,
             approved: dbUser?.approved ?? false,
-            role: dbUser?.role ?? "free"
+            role: dbUser?.role ?? "free",
+            // Carried through so the app can render the "you are inside X's account"
+            // banner and so impersonation can never be started from an impersonated
+            // session (no chaining).
+            impersonatedBy: payload.imp || null,
+            impersonatorEmail: payload.impEmail || null
         };
     }
 }

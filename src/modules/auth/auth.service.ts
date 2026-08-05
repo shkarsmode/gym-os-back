@@ -4,6 +4,9 @@ import { Response, Request } from "express";
 import { PrismaService } from "../../prisma/prisma.service";
 import { isAdminUser } from "../../shared/admin";
 
+// Impersonation sessions expire on their own so a forgotten one cannot linger.
+const IMPERSONATION_TTL = "60m";
+
 type GoogleUser = {
     googleId: string;
     email: string;
@@ -80,16 +83,55 @@ export class AuthService {
         });
     }
 
+    // A session that ACTS AS `target` while recording which super-admin is behind it.
+    // Deliberately short-lived: a forgotten impersonation session dies on its own.
+    createImpersonationToken(
+        target: { id: string; email: string; displayName: string },
+        admin: { id: string; email: string }
+    ) {
+        return this.jwtService.sign(
+            {
+                sub: target.id,
+                email: target.email,
+                displayName: target.displayName,
+                imp: admin.id,
+                impEmail: admin.email
+            },
+            { expiresIn: IMPERSONATION_TTL }
+        );
+    }
+
     attachSessionCookie(response: Response, user: { id: string; email: string; displayName: string }) {
-        const token = this.createSessionToken(user);
+        this.attachTokenCookie(response, this.createSessionToken(user));
+    }
+
+    attachTokenCookie(response: Response, token: string, maxAgeMs = 14 * 24 * 60 * 60 * 1000) {
         const isProduction = process.env.NODE_ENV === "production";
 
         response.cookie("gymos_session", token, {
             httpOnly: true,
             sameSite: isProduction ? "none" : "lax",
             secure: isProduction,
-            maxAge: 14 * 24 * 60 * 60 * 1000
+            maxAge: maxAgeMs
         });
+    }
+
+    // Raw claims of the presented token — the only way to see the `imp` claim, since
+    // readUserFromRequest resolves to the impersonated user and drops it.
+    async readTokenPayload(request: Request): Promise<{ sub: string; imp?: string; impEmail?: string } | null> {
+        const header = request.headers?.authorization || "";
+        const bearer = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+        const token = request.cookies?.gymos_session || bearer;
+        if (!token) {
+            return null;
+        }
+        try {
+            return await this.jwtService.verifyAsync<{ sub: string; imp?: string; impEmail?: string }>(token, {
+                secret: process.env.JWT_SECRET || "development-only-secret"
+            });
+        } catch (error) {
+            return null;
+        }
     }
 
     clearSessionCookie(response: Response) {
