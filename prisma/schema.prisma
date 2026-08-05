@@ -71,6 +71,9 @@ model UserProfile {
     displayName         String
     height              Int?
     bodyweight          Decimal? @db.Decimal(6, 2)
+    // Year of birth — asked for during AI-coach onboarding. Age changes recovery and
+    // strength-standard expectations, so the coach needs it; NULL when never provided.
+    birthYear           Int?
     gender              String   @default("male")
     trainingGoal        String?
     trainingExperience  String?

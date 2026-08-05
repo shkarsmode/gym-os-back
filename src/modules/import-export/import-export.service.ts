@@ -230,7 +230,7 @@ export class ImportExportService {
                 isSuperAdmin: isSuperAdminUser(item),
                 height: item.profile?.height || 0,
                 bodyweight: numberValue(item.profile?.bodyweight, 0),
-                birthYear: 2000,
+                birthYear: item.profile?.birthYear ?? null,
                 gender: item.profile?.gender || "male",
                 trainingGoal: item.profile?.trainingGoal || "Персональний прогрес",
                 trainingExperience: item.profile?.trainingExperience || "Не вказано",

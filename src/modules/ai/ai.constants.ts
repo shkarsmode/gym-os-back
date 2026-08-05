@@ -53,6 +53,26 @@ export const AI_DEFAULT_REST_SECONDS = 90;
 export const AI_DEFAULT_CARDIO_TYPE = "treadmill";
 export const AI_DEFAULT_CARDIO_INTENSITY = "medium";
 
+// ---- AI coach (analysis + chat) -------------------------------------------
+// How much history the metrics packet covers, and how many exercise tracks it
+// carries. Both bound the prompt: the packet stays a few KB whether the user has
+// trained for a month or three years.
+export const COACH_HISTORY_WEEKS = 16;
+export const COACH_MAX_EXERCISE_TRACKS = 14;
+// Analysis is a much bigger answer than a workout parse, and chat needs room to
+// think, so the coach gets its own generous ceiling and a longer timeout.
+export const COACH_MAX_OUTPUT_TOKENS = 8192;
+export const COACH_TEMPERATURE = 0.55;
+export const COACH_TIMEOUT_MS = 45000;
+export const COACH_MAX_BLOCKS = 18;
+export const COACH_MAX_MESSAGE_LENGTH = 1200;
+export const COACH_MAX_HISTORY = 10;
+// Daily budget per tier. Chat turns are cheap; a full analysis is not.
+export const COACH_PREMIUM_DAILY_LIMIT = 15;
+export const COACH_FREE_DAILY_LIMIT = 0;
+
+export const COACH_MODES = ["full", "workout", "weekly"] as const;
+
 // Normalized, non-leaking error codes surfaced to the client and stored in AiUsageLog.
 export const AI_ERROR = {
     NOT_CONFIGURED: "GEMINI_NOT_CONFIGURED",

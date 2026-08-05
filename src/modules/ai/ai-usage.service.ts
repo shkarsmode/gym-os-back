@@ -124,6 +124,20 @@ export class AiUsageService implements OnModuleInit {
         }
     }
 
+    // Successful AI-coach calls today (analysis + chat share one budget). Separate from
+    // countTodaySuccess so coaching never eats the workout-parse quota, or vice versa.
+    async countTodayCoach(userId: string): Promise<number> {
+        try {
+            await this.ensureTable();
+            return await this.prisma.aiUsageLog.count({
+                where: { userId, operation: { startsWith: "coach" }, status: "success", createdAt: { gte: startOfToday() } }
+            });
+        } catch (error) {
+            this.logger.warn(`countTodayCoach failed: ${(error as Error).message}`);
+            return 0;
+        }
+    }
+
     async summary(query: StatisticsQuery) {
         await this.ensureTable();
         const period = query.period || "30d";

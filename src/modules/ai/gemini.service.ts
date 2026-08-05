@@ -44,14 +44,19 @@ export class GeminiService {
         return this.client;
     }
 
+    // Overrides exist for the coach: an analysis is a far larger, more open-ended
+    // answer than a workout parse, so it needs more room, more warmth and more time.
     async generateStructured(options: {
         systemInstruction: string;
         prompt: string;
         schema: unknown;
+        temperature?: number;
+        maxOutputTokens?: number;
+        timeoutMs?: number;
     }): Promise<GeminiStructuredResult> {
         const client = this.getClient();
         const model = this.getModel();
-        const timeoutMs = aiTimeoutMs();
+        const timeoutMs = options.timeoutMs ?? aiTimeoutMs();
         const controller = new AbortController();
         let timedOut = false;
         const timer = setTimeout(() => {
@@ -67,8 +72,8 @@ export class GeminiService {
                     systemInstruction: options.systemInstruction,
                     responseMimeType: "application/json",
                     responseSchema: options.schema as never,
-                    temperature: AI_TEMPERATURE,
-                    maxOutputTokens: AI_MAX_OUTPUT_TOKENS,
+                    temperature: options.temperature ?? AI_TEMPERATURE,
+                    maxOutputTokens: options.maxOutputTokens ?? AI_MAX_OUTPUT_TOKENS,
                     abortSignal: controller.signal
                 }
             });

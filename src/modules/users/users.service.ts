@@ -86,6 +86,7 @@ export class UsersService {
                 displayName: dto.displayName || dto.name || "GymOS User",
                 height: dto.height,
                 bodyweight: dto.bodyweight,
+                birthYear: dto.birthYear,
                 gender: dto.gender || "male",
                 trainingGoal: dto.trainingGoal,
                 trainingExperience: dto.trainingExperience,

@@ -21,6 +21,14 @@ export class UpdateProfileDto {
     @Max(300)
     bodyweight?: number;
 
+    // Year only — enough for training age/recovery context, and far less personal
+    // data than a full date of birth.
+    @IsOptional()
+    @IsNumber()
+    @Min(1920)
+    @Max(2030)
+    birthYear?: number;
+
     @IsOptional()
     @IsIn(["male", "female"])
     gender?: string;
