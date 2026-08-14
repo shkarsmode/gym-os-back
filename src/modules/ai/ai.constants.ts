@@ -73,6 +73,31 @@ export const COACH_FREE_DAILY_LIMIT = 0;
 
 export const COACH_MODES = ["full", "workout", "weekly"] as const;
 
+// ---- Exercise duplicate check ---------------------------------------------
+// Advisory only: this endpoint never blocks a creation and never returns a 4xx for
+// an AI failure. Local fuzzy matching is the prefilter, Gemini is the judge.
+export const DUPLICATE_OPERATION = "exercise_duplicate_check";
+export const DUPLICATE_MIN_NAME_LENGTH = 2;
+// Pure fuzzy score is not a duplicate signal on its own: "Розгинання ніг в тренажері"
+// vs "Згинання ніг в тренажері" (opposite movements) scores 0.923, while the real
+// duplicate "Тяга Т-грифа в нахилі" vs "Тяга Т-грифа" scores only 0.814. So the low
+// floor only decides who gets SENT to the judge.
+export const DUPLICATE_JUDGE_FLOOR = 0.35;
+// Without a judge (free tier / no key / AI down) we show far fewer, safer cards.
+export const DUPLICATE_LOCAL_ONLY_FLOOR = 0.62;
+export const DUPLICATE_MAX_CANDIDATES = 8;
+export const DUPLICATE_MAX_MATCHES = 4;
+export const DUPLICATE_EXACT_SCORE = 0.995;
+export const DUPLICATE_MAX_DESCRIPTION_CHARS = 200;
+export const DUPLICATE_MAX_REASON_LENGTH = 140;
+// This fires on modal submit, so the default 15 s is far too long to make a user wait.
+export const DUPLICATE_TIMEOUT_MS = 7000;
+export const DUPLICATE_TEMPERATURE = 0;
+export const DUPLICATE_MAX_OUTPUT_TOKENS = 1024;
+export const DUPLICATE_PREMIUM_DAILY_LIMIT = 30;
+export const DUPLICATE_WINDOW_MS = 60000;
+export const DUPLICATE_MAX_PER_WINDOW = 8;
+
 // Normalized, non-leaking error codes surfaced to the client and stored in AiUsageLog.
 export const AI_ERROR = {
     NOT_CONFIGURED: "GEMINI_NOT_CONFIGURED",

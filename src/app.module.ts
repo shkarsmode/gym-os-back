@@ -8,6 +8,7 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { UsersModule } from "./modules/users/users.module";
 import { ProfilesModule } from "./modules/profiles/profiles.module";
 import { ExercisesModule } from "./modules/exercises/exercises.module";
+import { ExerciseMediaModule } from "./modules/exercise-media/exercise-media.module";
 import { WorkoutsModule } from "./modules/workouts/workouts.module";
 import { WorkoutTemplatesModule } from "./modules/workout-templates/workout-templates.module";
 import { BodyweightModule } from "./modules/bodyweight/bodyweight.module";
@@ -25,6 +26,7 @@ import { AiModule } from "./modules/ai/ai.module";
         UsersModule,
         ProfilesModule,
         ExercisesModule,
+        ExerciseMediaModule,
         WorkoutsModule,
         WorkoutTemplatesModule,
         BodyweightModule,

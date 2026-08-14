@@ -16,6 +16,7 @@
         "prisma:push": "node ./node_modules/prisma/build/index.js db push",
         "prisma:migrate": "node ./node_modules/prisma/build/index.js migrate dev",
         "seed": "node --import tsx prisma/seed.ts",
+        "build:media-index": "node --import tsx scripts/build-media-index.ts",
         "verify:kernel": "node scripts/verify-kernel.mjs",
         "sync:kernel": "node scripts/sync-kernel.mjs"
     },

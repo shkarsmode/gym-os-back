@@ -138,6 +138,20 @@ export class AiUsageService implements OnModuleInit {
         }
     }
 
+    // Successful calls of one operation today. Generic sibling of the two counters
+    // above, for operations that need their own budget (exercise duplicate check).
+    async countToday(userId: string, operation: string): Promise<number> {
+        try {
+            await this.ensureTable();
+            return await this.prisma.aiUsageLog.count({
+                where: { userId, operation, status: "success", createdAt: { gte: startOfToday() } }
+            });
+        } catch (error) {
+            this.logger.warn(`countToday(${operation}) failed: ${(error as Error).message}`);
+            return 0;
+        }
+    }
+
     async summary(query: StatisticsQuery) {
         await this.ensureTable();
         const period = query.period || "30d";

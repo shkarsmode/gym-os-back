@@ -11,6 +11,8 @@ import { ParseWorkoutDto } from "./dto/parse-workout.dto";
 import { CoachAnalyzeDto, CoachChatDto } from "./dto/coach.dto";
 import { AiCoachService } from "./ai-coach.service";
 import { StatisticsQueryDto } from "./dto/statistics-query.dto";
+import { AiExerciseDuplicateService } from "./ai-exercise-duplicate.service";
+import { ExerciseDuplicateCheckDto } from "./dto/exercise-duplicate.dto";
 import { AiError } from "./ai.types";
 
 // JwtAuthGuard authenticates and ApprovedGuard requires an approved account for every
@@ -22,7 +24,8 @@ export class AiController {
     constructor(
         private readonly aiWorkout: AiWorkoutService,
         private readonly coach: AiCoachService,
-        private readonly usage: AiUsageService
+        private readonly usage: AiUsageService,
+        private readonly duplicates: AiExerciseDuplicateService
     ) {}
 
     @Post("workouts/parse")
@@ -65,6 +68,17 @@ export class AiController {
             }
             throw error;
         }
+    }
+
+    // Advisory duplicate check for the custom-exercise form. Open to EVERY approved
+    // user - free users can create custom exercises, so they must be warned too; only
+    // the Gemini judging step is tiered, and its absence degrades to fuzzy candidates.
+    // Deliberately NOT behind AiRateLimitGuard: its 4 s cross-route cooldown would 429
+    // a legitimate re-check and poison the user's parse/coach budget. No AiError wrapper
+    // either - the service never throws one.
+    @Post("exercises/duplicate-check")
+    async exerciseDuplicateCheck(@CurrentUser() user: RequestUser, @Body() dto: ExerciseDuplicateCheckDto) {
+        return this.duplicates.check(user, tierOf(user), dto);
     }
 
     @Get("statistics/summary")
