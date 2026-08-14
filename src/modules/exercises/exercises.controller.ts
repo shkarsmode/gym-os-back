@@ -61,6 +61,14 @@ export class ExercisesController {
         return this.exercisesService.resetCuratedCatalog(user);
     }
 
+    // Seeding is deliberate and owner-only. Reading the catalog used to seed it as a
+    // side effect, which resurrected exercises that had been deleted as duplicates.
+    @Post("seed-catalog")
+    @UseGuards(JwtAuthGuard, ApprovedGuard)
+    seedCatalog(@CurrentUser() user: RequestUser) {
+        return this.exercisesService.seedCatalog(user);
+    }
+
     @Post(":id/update")
     @UseGuards(JwtAuthGuard, ApprovedGuard)
     update(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: UpdateExerciseDto) {

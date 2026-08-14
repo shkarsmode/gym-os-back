@@ -230,11 +230,6 @@ const extraCuratedExercises = [
 
 @Injectable()
 export class ExercisesService implements OnModuleInit {
-    // Once we've confirmed the curated catalog is seeded we don't need to re-run the
-    // lookup on every GET /exercises. Reset on cold start (new instance) and after a
-    // catalog reset, so it self-heals.
-    private curatedReady = false;
-    private extraReady = false;
     private reactionTableReady = false;
 
     constructor(private readonly prisma: PrismaService) {}
@@ -272,9 +267,12 @@ export class ExercisesService implements OnModuleInit {
         }
     }
 
+    // Reading the catalog never writes to it. Seeding used to run from here on every
+    // cold start, which silently re-created rows an admin had deliberately deleted as
+    // duplicates ("Махи гантелями в сторони" came back next to the user's own "Махи
+    // гантелей через сторони"). Seeding is now only ever triggered on purpose, via
+    // POST /exercises/seed-catalog.
     async findAll() {
-        await this.ensureCuratedCatalogAvailable();
-        await this.ensureExtraExercises();
         const exercises = await this.prisma.exercise.findMany({ orderBy: { name: "asc" } });
         const counts = await this.reactionCounts();
         return exercises.map((exercise) => ({
@@ -472,8 +470,6 @@ export class ExercisesService implements OnModuleInit {
 
     async resetCuratedCatalog(user: RequestUser) {
         this.assertCatalogOwner(user);
-        // Force the next GET /exercises to re-verify the curated catalog.
-        this.curatedReady = false;
 
         return this.prisma.$transaction(async (transaction) => {
             const before = await transaction.exercise.count();
@@ -537,13 +533,11 @@ export class ExercisesService implements OnModuleInit {
         };
     }
 
-    // Seed the extra hand-picked exercises (with gifs). Create-missing ONLY — never
+    // Seed the extra hand-picked exercises (with gifs). Create-missing ONLY - never
     // updates or deletes existing rows, templates, or standards, so it's safe to run
-    // on a live catalog and won't clobber admin edits. Idempotent by slug.
+    // on a live catalog and won't clobber admin edits. Idempotent by slug and by name.
+    // Only ever called from seedCatalog(); nothing on the read path writes.
     private async ensureExtraExercises() {
-        if (this.extraReady) {
-            return;
-        }
         const slugs = extraCuratedExercises.map((exercise) => exercise.slug);
         const names = extraCuratedExercises.map((exercise) => exercise.name);
         // Match on name as well as slug. A user-created exercise gets a cyrillic slug
@@ -585,13 +579,21 @@ export class ExercisesService implements OnModuleInit {
                 skipDuplicates: true
             });
         }
-        this.extraReady = true;
+        return missing.length;
+    }
+
+    // Deliberate, admin-triggered seeding of a fresh (or partly emptied) catalog. This
+    // is the ONLY entry point that creates catalog rows: reading the catalog never
+    // writes. Create-missing only, so running it against a live catalog is a no-op.
+    async seedCatalog(user: RequestUser) {
+        this.assertCatalogOwner(user);
+        const curated = await this.ensureCuratedCatalogAvailable();
+        const extra = await this.ensureExtraExercises();
+        const total = await this.prisma.exercise.count();
+        return { ok: true, createdCurated: curated, createdExtra: extra, total };
     }
 
     private async ensureCuratedCatalogAvailable() {
-        if (this.curatedReady) {
-            return;
-        }
         const existing = await this.prisma.exercise.findMany({
             where: { slug: { in: curatedExercises.map((exercise) => exercise.slug) } },
             select: { slug: true }
@@ -600,8 +602,7 @@ export class ExercisesService implements OnModuleInit {
         const missingCuratedExercises = curatedExercises.filter((exercise) => !existingSlugs.has(exercise.slug));
 
         if (!missingCuratedExercises.length) {
-            this.curatedReady = true;
-            return;
+            return 0;
         }
 
         await this.prisma.$transaction(async (transaction) => {
@@ -618,7 +619,7 @@ export class ExercisesService implements OnModuleInit {
             await this.createCuratedTemplates(transaction, curated);
             await this.createCuratedStandards(transaction, curated);
         });
-        this.curatedReady = true;
+        return missingCuratedExercises.length;
     }
 
     private async createCuratedTemplates(transaction: Prisma.TransactionClient, curated: Array<{ id: string; slug: string }>) {
