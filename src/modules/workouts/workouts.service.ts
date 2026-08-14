@@ -60,7 +60,11 @@ export class WorkoutsService {
         if (!isOwner && !isAdmin && workout.status !== "completed") {
             throw new NotFoundException("Workout not found");
         }
-        return workout;
+        // Serialize like every other workout-returning route. Raw Prisma sends weight and
+        // rpe as Decimals (JSON strings) and date as a full timestamp, so a client merging
+        // this row into its store got string weights and a date that no longer matched the
+        // YYYY-MM-DD every other row carries.
+        return serializeWorkout(workout);
     }
 
     async create(userId: string, dto: CreateWorkoutDto, tier: QuotaTier = "free") {
