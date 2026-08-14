@@ -545,12 +545,19 @@ export class ExercisesService implements OnModuleInit {
             return;
         }
         const slugs = extraCuratedExercises.map((exercise) => exercise.slug);
+        const names = extraCuratedExercises.map((exercise) => exercise.name);
+        // Match on name as well as slug. A user-created exercise gets a cyrillic slug
+        // ("тяга-штанги-в-нахилі"), so a slug-only check saw no conflict and seeded the
+        // English twin ("barbell-bent-over-row") next to it: the catalog then showed
+        // the same movement twice, both "approved". Skipping by name keeps a fresh DB
+        // fully seeded while never adding a second copy of a movement that's already there.
         const existing = await this.prisma.exercise.findMany({
-            where: { slug: { in: slugs } },
-            select: { slug: true }
+            where: { OR: [{ slug: { in: slugs } }, { name: { in: names } }] },
+            select: { slug: true, name: true }
         });
         const existingSlugs = new Set(existing.map((exercise) => exercise.slug));
-        const missing = extraCuratedExercises.filter((exercise) => !existingSlugs.has(exercise.slug));
+        const existingNames = new Set(existing.map((exercise) => exercise.name));
+        const missing = extraCuratedExercises.filter((exercise) => !existingSlugs.has(exercise.slug) && !existingNames.has(exercise.name));
 
         if (missing.length) {
             await this.prisma.exercise.createMany({
