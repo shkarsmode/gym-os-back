@@ -526,7 +526,11 @@ async function importWorkouts(transaction: any, userId: string, workouts: any[])
                                 repetitions: Number(set.repetitions) || 0,
                                 rpe: Number(set.rpe) || null,
                                 restSeconds: Number(set.restSeconds) || 90,
-                                isCompleted: Boolean(set.isCompleted),
+                                // Same rule as WorkoutsService: a completed session has no
+                                // unfinished sets. The one-off DB backfill runs once per
+                                // database, so without this an old export would re-seed
+                                // exactly the "0 підходів" rows it was written to heal.
+                                isCompleted: (workout.status || "planned") === "completed" ? true : Boolean(set.isCompleted),
                                 notes: set.notes || null
                             }))
                         }

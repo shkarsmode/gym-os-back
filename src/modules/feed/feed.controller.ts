@@ -7,6 +7,7 @@ import { FeedService } from "./feed.service";
 import { PushService } from "./push.service";
 import {
     AchievementSyncDto,
+    RecordSyncDto,
     CommentDto,
     EditCommentDto,
     FeedQueryDto,
@@ -70,6 +71,11 @@ export class FeedController {
     @Post("report")
     report(@CurrentUser() user: RequestUser, @Body() dto: ReportDto) {
         return this.feed.report(user, dto.targetType, dto.targetId, dto.reason, dto.details);
+    }
+
+    @Post("records/sync")
+    syncRecords(@CurrentUser() user: RequestUser, @Body() dto: RecordSyncDto) {
+        return this.feed.syncRecords(user, dto.items || []);
     }
 
     @Post("achievements/sync")

@@ -25,6 +25,16 @@ import {
     workoutFeedPayload
 } from "./feed.timeline";
 
+interface RecordSyncItem {
+    exerciseId: string;
+    weightKg: number;
+    repetitions?: number;
+    estimatedOneRepMax?: number;
+    workoutId?: string;
+    isEstimated?: boolean;
+    recordedAt?: string;
+}
+
 @Injectable()
 export class FeedService {
     private readonly logger = new Logger(FeedService.name);
@@ -146,7 +156,10 @@ export class FeedService {
                 ? await this.prisma.workout.findMany({
                     where: { id: { in: timings.map((item) => item.id) } },
                     include: {
-                        exercises: { include: { sets: true, exercise: { select: { name: true } } } },
+                        // Ordered like the detail view: the preview takes the first four,
+                        // and unordered rows made the card advertise a different subset
+                        // than the workout it opens.
+                        exercises: { orderBy: { order: "asc" }, include: { sets: true, exercise: { select: { name: true } } } },
                         cardioSessions: { select: { durationMinutes: true } }
                     }
                 })
@@ -167,7 +180,7 @@ export class FeedService {
             }
         }
 
-        if (scope === "team" || scope === "records") {
+        if (scope === "team" || scope === "records" || mineOnly) {
             const records = await this.prisma.personalRecord.findMany({
                 where: {
                     ...(mineOnly ? { userId: user.id } : {}),
@@ -194,7 +207,7 @@ export class FeedService {
             }
         }
 
-        if (scope === "team" || scope === "achievements") {
+        if (scope === "team" || scope === "achievements" || mineOnly) {
             const unlocked = await this.prisma.userAchievement.findMany({
                 where: {
                     unlockedAt: { not: null },
@@ -644,7 +657,7 @@ export class FeedService {
         await this.ensureTables();
         const before = decodeFeedCursor(cursor);
         const rows = await this.prisma.notification.findMany({
-            where: { userId: user.id, ...(before ? { createdAt: { lt: before.at } } : {}) },
+            where: { userId: user.id, ...(before ? keysetWhere("createdAt", before, "notification") : {}) },
             orderBy: { createdAt: "desc" },
             take: NOTIFICATION_PAGE_SIZE + 1
         });
@@ -759,6 +772,60 @@ export class FeedService {
     }
 
     // Who owns the thing being reacted to / commented on — the person to notify.
+    // Personal records are computed on the client (the kernel in lib/scoring.js owns that
+    // arithmetic), so the server keeps one row per (user, exercise, type) purely so the
+    // "Рекорди" scope has something to show. Without this bridge nothing in the codebase
+    // ever wrote a PersonalRecord and the tab was permanently empty.
+    //
+    // Only an improvement is stored: a client replaying its whole history must not be
+    // able to walk a record backwards.
+    async syncRecords(user: RequestUser, items: RecordSyncItem[]) {
+        await this.ensureTables();
+        let written = 0;
+        for (const item of (items || []).slice(0, 60)) {
+            const exerciseId = String(item.exerciseId || "").trim();
+            const weight = Number(item.weightKg);
+            if (!exerciseId || !Number.isFinite(weight) || weight <= 0) {
+                continue;
+            }
+            const exercise = await this.prisma.exercise.findUnique({ where: { id: exerciseId }, select: { id: true } });
+            if (!exercise) {
+                continue;
+            }
+            const estimated = Number.isFinite(Number(item.estimatedOneRepMax)) ? Number(item.estimatedOneRepMax) : weight;
+            const recordedAt = item.recordedAt ? new Date(item.recordedAt) : new Date();
+            const type = "estimated_one_rep_max";
+            const existing = await this.prisma.personalRecord.findFirst({
+                where: { userId: user.id, exerciseId, type },
+                orderBy: { estimatedOneRepMax: "desc" }
+            });
+            if (existing && Number(existing.estimatedOneRepMax ?? existing.value) >= estimated) {
+                continue;
+            }
+            const data = {
+                userId: user.id,
+                exerciseId,
+                workoutId: item.workoutId || null,
+                type,
+                // `value` and `estimatedOneRepMax` both carry the 1RM: the feed read falls
+                // back from one to the other, and older rows only ever had `value`.
+                value: estimated,
+                estimatedOneRepMax: estimated,
+                weight,
+                repetitions: Number.isFinite(Number(item.repetitions)) ? Number(item.repetitions) : null,
+                isEstimated: item.isEstimated === undefined ? true : Boolean(item.isEstimated),
+                recordedAt: Number.isFinite(recordedAt.getTime()) ? recordedAt : new Date()
+            };
+            if (existing) {
+                await this.prisma.personalRecord.update({ where: { id: existing.id }, data });
+            } else {
+                await this.prisma.personalRecord.create({ data });
+            }
+            written += 1;
+        }
+        return { ok: true, written };
+    }
+
     private async ownerOf(targetType: string, targetId: string): Promise<string | null> {
         if (targetType === "workout") {
             const row = await this.prisma.workout.findUnique({ where: { id: targetId }, select: { userId: true } });

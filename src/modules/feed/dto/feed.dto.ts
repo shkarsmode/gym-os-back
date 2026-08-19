@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from "class-validator";
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, MaxLength, Min, ValidateNested } from "class-validator";
 import { Type } from "class-transformer";
 import { COMMENT_MAX_LENGTH, FEED_MAX_PAGE_SIZE, FEED_SCOPES, FEED_TARGET_TYPES, REPORT_DETAILS_MAX_LENGTH, REPORT_REASONS } from "../feed.constants";
 
@@ -106,4 +106,43 @@ export class AchievementSyncDto {
     @ValidateNested({ each: true })
     @Type(() => AchievementSyncItemDto)
     items!: AchievementSyncItemDto[];
+}
+
+export class RecordSyncItemDto {
+    @IsString()
+    @MaxLength(60)
+    exerciseId!: string;
+
+    @IsNumber()
+    weightKg!: number;
+
+    @IsOptional()
+    @IsNumber()
+    repetitions?: number;
+
+    @IsOptional()
+    @IsNumber()
+    estimatedOneRepMax?: number;
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(60)
+    workoutId?: string;
+
+    @IsOptional()
+    @IsBoolean()
+    isEstimated?: boolean;
+
+    // The session's timeline instant, so a record sits next to the workout that set it
+    // rather than at midnight where it would tie with every achievement of that day.
+    @IsOptional()
+    @IsString()
+    recordedAt?: string;
+}
+
+export class RecordSyncDto {
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => RecordSyncItemDto)
+    items!: RecordSyncItemDto[];
 }
