@@ -1,7 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AiController } from "./ai.controller";
 import { AiWorkoutService } from "./ai-workout.service";
-import { AiCoachService } from "./ai-coach.service";
 import { AiExerciseDuplicateService } from "./ai-exercise-duplicate.service";
 import { GeminiService } from "./gemini.service";
 import { AiUsageService } from "./ai-usage.service";
@@ -12,8 +11,7 @@ import { AiUsageService } from "./ai-usage.service";
 // this module to reach them. They are the only two providers any other module needs.
 @Module({
     controllers: [AiController],
-    providers: [AiWorkoutService,
-        AiCoachService, AiExerciseDuplicateService, GeminiService, AiUsageService],
+    providers: [AiWorkoutService, AiExerciseDuplicateService, GeminiService, AiUsageService],
     exports: [GeminiService, AiUsageService]
 })
 export class AiModule {}

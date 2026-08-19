@@ -16,6 +16,7 @@ import { AchievementsModule } from "./modules/achievements/achievements.module";
 import { ScoringModule } from "./modules/scoring/scoring.module";
 import { ImportExportModule } from "./modules/import-export/import-export.module";
 import { FeedbackModule } from "./modules/feedback/feedback.module";
+import { FeedModule } from "./modules/feed/feed.module";
 import { AiModule } from "./modules/ai/ai.module";
 
 @Module({
@@ -34,7 +35,8 @@ import { AiModule } from "./modules/ai/ai.module";
         ScoringModule,
         ImportExportModule,
         FeedbackModule,
-        AiModule
+        AiModule,
+        FeedModule
     ],
     controllers: [HealthController],
     providers: [{ provide: APP_GUARD, useClass: ThrottleGuard }]
