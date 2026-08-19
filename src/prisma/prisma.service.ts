@@ -35,6 +35,21 @@ const INDEX_STATEMENTS = [
 // no error, no log, just a query plan that never got its index.
 const INDEX_SET_VERSION = 1;
 
+// One-off data reconciliations, gated on their own counter so they run once per
+// database rather than on every serverless cold start. Bump when adding a statement.
+const BACKFILL_VERSION = 1;
+const BACKFILL_STATEMENTS = [
+    // Product rule (2026-08-20): a completed workout has no unfinished sets. Older
+    // sessions were saved with whatever the user happened to tick, which made the feed
+    // render real exercises as "0 підходів" and under-counted their volume.
+    `UPDATE "WorkoutSet" AS s SET "isCompleted" = true
+       FROM "WorkoutExercise" AS we, "Workout" AS w
+      WHERE s."workoutExerciseId" = we."id"
+        AND we."workoutId" = w."id"
+        AND w."status" = 'completed'
+        AND s."isCompleted" = false;`
+];
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
     private readonly logger = new Logger(PrismaService.name);
@@ -102,6 +117,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
             await this.$executeRawUnsafe(
                 'INSERT INTO "_gymos_schema_version" ("id", "indexVersion") VALUES (1, 0) ON CONFLICT ("id") DO NOTHING;'
             );
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "_gymos_schema_version" ADD COLUMN IF NOT EXISTS "backfillVersion" INTEGER NOT NULL DEFAULT 0;'
+            );
+
+            await this.runBackfills();
 
             const versionRows = (await this.$queryRawUnsafe(
                 'SELECT "indexVersion" FROM "_gymos_schema_version" WHERE "id" = 1;'
@@ -123,5 +143,23 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         } catch (error) {
             this.logger.error("ensureSchema failed", error as Error);
         }
+    }
+
+    // Data (not schema) reconciliation. Separate counter from the index set so a data
+    // fix is not held hostage by the index gate, and vice versa.
+    private async runBackfills() {
+        const rows = (await this.$queryRawUnsafe(
+            'SELECT "backfillVersion" FROM "_gymos_schema_version" WHERE "id" = 1;'
+        )) as Array<{ backfillVersion: number | null }>;
+        if (Number(rows?.[0]?.backfillVersion ?? 0) >= BACKFILL_VERSION) {
+            return;
+        }
+        for (const statement of BACKFILL_STATEMENTS) {
+            await this.$executeRawUnsafe(statement);
+        }
+        await this.$executeRawUnsafe(
+            `UPDATE "_gymos_schema_version" SET "backfillVersion" = ${BACKFILL_VERSION} WHERE "id" = 1;`
+        );
+        this.logger.log(`ensureSchema: backfills applied to v${BACKFILL_VERSION}`);
     }
 }

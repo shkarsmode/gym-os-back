@@ -162,7 +162,9 @@ export class WorkoutsService {
                     durationSeconds: set.durationSeconds === undefined || set.durationSeconds === null ? null : Math.round(Number(set.durationSeconds)),
                     rpe: set.rpe === undefined || set.rpe === null ? null : Number(set.rpe),
                     restSeconds: set.restSeconds ?? 90,
-                    isCompleted: Boolean(set.isCompleted),
+                    // Product rule: a finished session has no half-done sets. Anything left
+                    // unticked when the workout is completed still counts as performed.
+                    isCompleted: dto.status === "completed" ? true : Boolean(set.isCompleted),
                     notes: set.notes ?? null
                 }))
             }
@@ -184,6 +186,15 @@ export class WorkoutsService {
         // "CORS error"). The array form runs as a single batched BEGIN..COMMIT.
         const operations: any[] = [];
         if (dto.status === "active") {
+            // Starting a session closes the previous one — and a closed session has all
+            // its sets marked done, same rule as finish().
+            operations.push(this.prisma.workoutSet.updateMany({
+                where: {
+                    isCompleted: false,
+                    workoutExercise: { workout: { userId: ownerId, status: "active", id: { not: id } } }
+                },
+                data: { isCompleted: true }
+            }));
             operations.push(this.prisma.workout.updateMany({
                 where: { userId: ownerId, status: "active", id: { not: id } },
                 data: { status: "completed", finishedAt: new Date() }
@@ -268,6 +279,13 @@ export class WorkoutsService {
 
     async start(userId: string, id: string) {
         await this.assertOwner(userId, id);
+        const superseded = await this.prisma.workout.findMany({
+            where: { userId, status: "active", id: { not: id } },
+            select: { id: true }
+        });
+        for (const item of superseded) {
+            await this.completeSetsOf(item.id);
+        }
         await this.prisma.workout.updateMany({
             where: { userId, status: "active", id: { not: id } },
             data: { status: "completed", finishedAt: new Date() }
@@ -281,10 +299,22 @@ export class WorkoutsService {
 
     async finish(userId: string, id: string) {
         await this.assertOwner(userId, id);
-        return this.prisma.workout.update({
-            where: { id },
-            data: { status: "completed", finishedAt: new Date() },
-            include: this.includeWorkout()
+        await this.prisma.$transaction([
+            this.completeSetsOf(id),
+            this.prisma.workout.update({
+                where: { id },
+                data: { status: "completed", finishedAt: new Date() }
+            })
+        ]);
+        return this.prisma.workout.findUnique({ where: { id }, include: this.includeWorkout() });
+    }
+
+    // Every set of a completed workout is a performed set — see the product rule in
+    // saveFull. Used by every path that moves a workout into "completed".
+    private completeSetsOf(workoutId: string) {
+        return this.prisma.workoutSet.updateMany({
+            where: { isCompleted: false, workoutExercise: { workoutId } },
+            data: { isCompleted: true }
         });
     }
 

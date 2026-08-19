@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
 import { isAdminUser } from "../../shared/admin";
@@ -12,6 +13,18 @@ import {
     NOTIFICATION_TYPES,
     REPORT_DETAILS_MAX_LENGTH
 } from "./feed.constants";
+
+// A page boundary is a POSITION, not an instant. Two items can share a timestamp —
+// achievements especially, since their unlock dates are computed deterministically — and
+// a plain `createdAt < cursor` silently dropped every one of them that tied with the last
+// item on the previous page.
+const REACTABLE_TYPES = new Set(["workout", "record", "achievement", "comment"]);
+
+interface FeedCursor {
+    at: Date;
+    type: string;
+    id: string;
+}
 
 interface FeedRow {
     id: string;
@@ -128,26 +141,37 @@ export class FeedService {
         const rows: FeedRow[] = [];
 
         if (scope === "team" || scope === "mine") {
-            const workouts = await this.prisma.workout.findMany({
-                where: {
-                    status: "completed",
-                    ...(mineOnly ? { userId: user.id } : {}),
-                    ...(before ? { finishedAt: { lt: before } } : { finishedAt: { not: null } })
-                },
-                orderBy: [{ finishedAt: "desc" }, { id: "desc" }],
-                take: take + 1,
-                include: {
-                    exercises: { include: { sets: true, exercise: { select: { name: true } } } },
-                    cardioSessions: { select: { durationMinutes: true } }
+            // A session belongs on the timeline at the moment it was TRAINED, not the
+            // moment it happened to be saved. Ordering by finishedAt put a retroactively
+            // entered July session between two August ones, buried a Wednesday session
+            // seven rows down because it had been planned on Monday, and made cards read
+            // "вчора" for a workout done three days earlier.
+            //
+            // The key is therefore the workout's own date carrying the clock time it was
+            // finished: the date decides the position, the time only breaks ties inside a
+            // day. It has to be computed in SQL because the cursor paginates on it.
+            const timings = await this.workoutTimeline(user.id, mineOnly, before, take + 1);
+            const workouts = timings.length
+                ? await this.prisma.workout.findMany({
+                    where: { id: { in: timings.map((item) => item.id) } },
+                    include: {
+                        exercises: { include: { sets: true, exercise: { select: { name: true } } } },
+                        cardioSessions: { select: { durationMinutes: true } }
+                    }
+                })
+                : [];
+            const byId = new Map(workouts.map((item) => [item.id, item]));
+            for (const timing of timings) {
+                const workout = byId.get(timing.id);
+                if (!workout) {
+                    continue;
                 }
-            });
-            for (const workout of workouts) {
                 const sets = workout.exercises.flatMap((item) => item.sets.filter((set) => set.isCompleted));
                 rows.push({
                     id: workout.id,
                     type: "workout",
                     userId: workout.userId,
-                    createdAt: workout.finishedAt || workout.updatedAt,
+                    createdAt: timing.feedAt,
                     payload: {
                         title: workout.title,
                         workoutType: workout.workoutType,
@@ -175,7 +199,7 @@ export class FeedService {
             const records = await this.prisma.personalRecord.findMany({
                 where: {
                     ...(mineOnly ? { userId: user.id } : {}),
-                    ...(before ? { recordedAt: { lt: before } } : {})
+                    ...(before ? keysetWhere("recordedAt", before, "record") : {})
                 },
                 orderBy: [{ recordedAt: "desc" }, { id: "desc" }],
                 take: take + 1,
@@ -201,7 +225,8 @@ export class FeedService {
         if (scope === "team" || scope === "achievements") {
             const unlocked = await this.prisma.userAchievement.findMany({
                 where: {
-                    unlockedAt: before ? { lt: before } : { not: null },
+                    unlockedAt: { not: null },
+                    ...(before ? keysetWhere("unlockedAt", before, "achievement") : {}),
                     ...(mineOnly ? { userId: user.id } : {})
                 },
                 orderBy: [{ unlockedAt: "desc" }, { id: "desc" }],
@@ -228,7 +253,8 @@ export class FeedService {
 
         rows.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
         const page = rows.slice(0, take);
-        const nextCursor = rows.length > take && page.length ? encodeTime(page[page.length - 1].createdAt) : null;
+        const last = page[page.length - 1];
+        const nextCursor = rows.length > take && last ? encodeTime({ at: last.createdAt, type: last.type, id: last.id }) : null;
 
         const [authors, reactions, commentCounts] = await Promise.all([
             this.authorMap(page.map((row) => row.userId)),
@@ -248,6 +274,30 @@ export class FeedService {
             })),
             nextCursor
         };
+    }
+
+    // Ordered ids + timeline positions for the workout source. Raw SQL because the sort
+    // key is derived (session date + finish time-of-day) and the keyset cursor compares
+    // against that same expression — Prisma cannot express either.
+    //
+    // No `finishedAt IS NOT NULL` guard: a session saved as completed without a finish
+    // timestamp is still a real session, and the old filter made it invisible forever.
+    private async workoutTimeline(userId: string, mineOnly: boolean, before: FeedCursor | null, take: number) {
+        const key = Prisma.sql`(w."date"::date + COALESCE(w."finishedAt", w."updatedAt")::time)`;
+        const rows = await this.prisma.$queryRaw<Array<{ id: string; feedAt: Date }>>(Prisma.sql`
+            SELECT w."id" AS "id", ${key} AS "feedAt"
+              FROM "Workout" w
+             WHERE w."status" = 'completed'
+               ${mineOnly ? Prisma.sql`AND w."userId" = ${userId}` : Prisma.empty}
+               ${before
+                   ? (before.type === "workout"
+                       ? Prisma.sql`AND (${key} < ${before.at} OR (${key} = ${before.at} AND w."id" < ${before.id}))`
+                       : Prisma.sql`AND ${key} < ${before.at}`)
+                   : Prisma.empty}
+             ORDER BY ${key} DESC, w."id" DESC
+             LIMIT ${take}
+        `);
+        return rows.map((row) => ({ id: row.id, feedAt: new Date(row.feedAt) }));
     }
 
     private async authorMap(userIds: string[]) {
@@ -337,7 +387,9 @@ export class FeedService {
             title: workout.title,
             workoutType: workout.workoutType,
             date: workout.date,
-            createdAt: workout.finishedAt || workout.updatedAt,
+            // Same timeline value the list uses, so the detail header cannot disagree
+            // with the card the reader tapped.
+            createdAt: timelineAt(workout.date, workout.finishedAt || workout.updatedAt),
             volumeKg: round(sets.reduce((sum, set) => sum + Number(set.weight) * set.repetitions, 0)),
             setCount: sets.length,
             exerciseCount: workout.exercises.length,
@@ -362,6 +414,9 @@ export class FeedService {
     // client reconciles instead of guessing.
     async toggleReaction(user: RequestUser, targetType: string, targetId: string) {
         await this.ensureTables();
+        if (!REACTABLE_TYPES.has(targetType)) {
+            throw new BadRequestException("Unknown target type");
+        }
         const existing = await this.prisma.feedReaction.findUnique({
             where: { userId_targetType_targetId: { userId: user.id, targetType, targetId } }
         });
@@ -620,7 +675,7 @@ export class FeedService {
         await this.ensureTables();
         const before = decodeTime(cursor);
         const rows = await this.prisma.notification.findMany({
-            where: { userId: user.id, ...(before ? { createdAt: { lt: before } } : {}) },
+            where: { userId: user.id, ...(before ? { createdAt: { lt: before.at } } : {}) },
             orderBy: { createdAt: "desc" },
             take: NOTIFICATION_PAGE_SIZE + 1
         });
@@ -639,7 +694,9 @@ export class FeedService {
                 actor: row.actorId ? actors.get(row.actorId) || null : null
             })),
             unread,
-            nextCursor: rows.length > page.length && page.length ? encodeTime(page[page.length - 1].createdAt) : null
+            nextCursor: rows.length > page.length && page.length
+                ? encodeTime({ at: page[page.length - 1].createdAt, type: "notification", id: page[page.length - 1].id })
+                : null
         };
     }
 
@@ -761,18 +818,46 @@ function round(value: number): number {
 // Time cursors are opaque base64url — a position, never an identifier. Unparseable
 // input restarts the list rather than erroring, because the client cannot recover
 // from a 500 here but it can recover from an empty cursor.
-function encodeTime(date: Date): string {
-    return Buffer.from(JSON.stringify({ t: date.toISOString() }), "utf8").toString("base64url");
+// The session's calendar date carrying the clock time it was finished. Mirrors the SQL
+// expression in workoutTimeline() — keep the two in step.
+function timelineAt(date: Date, clock: Date): Date {
+    const value = new Date(date);
+    value.setUTCHours(clock.getUTCHours(), clock.getUTCMinutes(), clock.getUTCSeconds(), clock.getUTCMilliseconds());
+    return value;
 }
 
-function decodeTime(cursor?: string): Date | null {
+// Row-wise "strictly after the cursor position" for a source keyed on `field`. Items that
+// tie with the boundary instant are kept unless they sort at-or-before it by id, so a
+// batch of achievements sharing one unlockedAt can no longer vanish at a page boundary.
+function keysetWhere(field: string, cursor: FeedCursor, type: string) {
+    if (cursor.type !== type || !cursor.id) {
+        return { [field]: { lt: cursor.at } } as Record<string, unknown>;
+    }
+    return {
+        OR: [
+            { [field]: { lt: cursor.at } },
+            { [field]: cursor.at, id: { lt: cursor.id } }
+        ]
+    } as Record<string, unknown>;
+}
+
+function encodeTime(position: FeedCursor): string {
+    return Buffer.from(JSON.stringify({ t: position.at.toISOString(), y: position.type, i: position.id }), "utf8").toString("base64url");
+}
+
+function decodeTime(cursor?: string): FeedCursor | null {
     if (!cursor) {
         return null;
     }
     try {
         const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
         const date = new Date(parsed.t);
-        return Number.isFinite(date.getTime()) ? date : null;
+        if (!Number.isFinite(date.getTime())) {
+            return null;
+        }
+        // `y`/`i` are absent in cursors minted before the keyset upgrade; such a cursor
+        // still paginates, it just keeps the old strict-timestamp behaviour for one page.
+        return { at: date, type: typeof parsed.y === "string" ? parsed.y : "", id: typeof parsed.i === "string" ? parsed.i : "" };
     } catch (error) {
         return null;
     }
