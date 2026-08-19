@@ -566,6 +566,10 @@ export class FeedService {
                     createdAt: report.createdAt,
                     reportCount: count,
                     reporters: who,
+                    // Where the moderator has to look. A reported comment points at its
+                    // post, not at itself, so "Відкрити" lands on readable context either way.
+                    postType: comment ? comment.targetType : report.targetType,
+                    postId: comment ? comment.targetId : report.targetId,
                     comment: comment
                         ? { id: comment.id, body: comment.body, hidden: comment.hidden, author: comment.user, createdAt: comment.createdAt }
                         : null
