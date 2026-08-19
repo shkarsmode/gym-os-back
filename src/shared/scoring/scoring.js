@@ -89,15 +89,17 @@ export function oneRepMax(weight, repetitions) {
 }
 
 export function exerciseVolume(workoutExercise) {
-    return round(workoutExercise.sets.filter((set) => set.isCompleted).reduce((sum, set) => sum + set.weight * set.repetitions, 0), 1);
+    return round((workoutExercise.sets || []).filter((set) => set.isCompleted).reduce((sum, set) => sum + set.weight * set.repetitions, 0), 1);
 }
 
 export function workoutVolume(workoutItem) {
-    return round(workoutItem.exercises.reduce((sum, item) => sum + exerciseVolume(item), 0), 1);
+    // Peer rows arrive as summaries with no `exercises` under the windowed payload —
+    // never crash on them (callers that need the real number read the row aggregate).
+    return round((workoutItem.exercises || []).reduce((sum, item) => sum + exerciseVolume(item), 0), 1);
 }
 
 export function exerciseOneRepMax(workoutExercise) {
-    return round(Math.max(0, ...workoutExercise.sets.filter((set) => set.isCompleted).map((set) => oneRepMax(set.weight, set.repetitions))), 1);
+    return round(Math.max(0, ...(workoutExercise.sets || []).filter((set) => set.isCompleted).map((set) => oneRepMax(set.weight, set.repetitions))), 1);
 }
 
 // Clock duration. `now` is injected so an unfinished workout is deterministic.
@@ -117,19 +119,25 @@ export function duration(workoutItem, now) {
 }
 
 // ---------------------------------------------------------------- aggregation maps
+//
+// Every function below may be handed a PEER row from the windowed payload: a summary
+// carrying totalVolume/setCount aggregates and NO `exercises` key at all. Reading
+// `.exercises` unguarded is what threw "undefined is not an object (evaluating
+// 'i.exercises.filter')" on another member's profile. Treat a missing array as empty —
+// the caller is expected to prefer the server aggregates for those rows anyway.
 
 export function muscleSetMap(workouts, exerciseById) {
     const map = new Map();
-    workouts.forEach((workoutItem) => workoutItem.exercises.forEach((workoutExercise) => {
+    workouts.forEach((workoutItem) => (workoutItem.exercises || []).forEach((workoutExercise) => {
         const muscle = exerciseById(workoutExercise.exerciseId).primaryMuscleGroup;
-        map.set(muscle, (map.get(muscle) || 0) + workoutExercise.sets.filter((set) => set.isCompleted).length);
+        map.set(muscle, (map.get(muscle) || 0) + (workoutExercise.sets || []).filter((set) => set.isCompleted).length);
     }));
     return map;
 }
 
 export function exerciseUsageMap(workouts) {
     const map = new Map();
-    workouts.forEach((workoutItem) => workoutItem.exercises.forEach((workoutExercise) => map.set(workoutExercise.exerciseId, (map.get(workoutExercise.exerciseId) || 0) + 1)));
+    workouts.forEach((workoutItem) => (workoutItem.exercises || []).forEach((workoutExercise) => map.set(workoutExercise.exerciseId, (map.get(workoutExercise.exerciseId) || 0) + 1)));
     return map;
 }
 
@@ -174,9 +182,9 @@ export function streak(completedWorkouts, now) {
 export function recordsFor(userId, workouts, exerciseById) {
     const map = new Map();
     workouts.filter((item) => item.status === "completed").forEach((workoutItem) => {
-        workoutItem.exercises.forEach((workoutExercise) => {
+        (workoutItem.exercises || []).forEach((workoutExercise) => {
             const exercise = exerciseById(workoutExercise.exerciseId);
-            workoutExercise.sets.filter((set) => set.isCompleted && set.type !== "warmup").forEach((set) => {
+            (workoutExercise.sets || []).filter((set) => set.isCompleted && set.type !== "warmup").forEach((set) => {
                 const estimatedOneRepMax = oneRepMax(set.weight, set.repetitions);
                 const current = map.get(exercise.id);
                 if (!current || estimatedOneRepMax > current.estimatedOneRepMax) {
@@ -208,7 +216,7 @@ export function recordsFor(userId, workouts, exerciseById) {
 export function userStats(userId, workouts, context) {
     const { exerciseById, now } = context;
     const completed = workouts.filter((item) => item.status === "completed");
-    const allSets = completed.flatMap((item) => item.exercises.flatMap((exercise) => exercise.sets)).filter((set) => set.isCompleted);
+    const allSets = completed.flatMap((item) => (item.exercises || []).flatMap((exercise) => exercise.sets || [])).filter((set) => set.isCompleted);
     const cardioSessions = workouts.flatMap((item) => item.cardioSessions || []);
     const weekStart = startOfWeek(new Date(now));
     const week = completed.filter((item) => new Date(item.date) >= weekStart);
@@ -227,14 +235,14 @@ export function userStats(userId, workouts, context) {
         cardioDistance: round(cardioSessions.reduce((sum, session) => sum + session.distance, 0), 1),
         cardioSessions: cardioSessions.length,
         weekVolume: round(week.reduce((sum, item) => sum + workoutVolume(item), 0), 1),
-        weekSets: week.flatMap((item) => item.exercises.flatMap((exercise) => exercise.sets)).filter((set) => set.isCompleted).length,
+        weekSets: week.flatMap((item) => (item.exercises || []).flatMap((exercise) => exercise.sets || [])).filter((set) => set.isCompleted).length,
         weekCardioMinutes: week.flatMap((item) => item.cardioSessions || []).reduce((sum, session) => sum + session.durationMinutes, 0),
         trainingStreak: streak(completed, now),
         lastWorkoutDate: [...completed].sort(byDateDesc)[0]?.date || null,
         mostUsedExerciseId: topMap(exerciseMap),
         mostTrainedMuscleGroup: topMap(muscleMap),
         personalRecords: recordsFor(userId, workouts, exerciseById).length,
-        notesCount: completed.reduce((sum, item) => sum + (item.notes ? 1 : 0) + item.exercises.filter((exercise) => exercise.notes).length, 0)
+        notesCount: completed.reduce((sum, item) => sum + (item.notes ? 1 : 0) + (item.exercises || []).filter((exercise) => exercise.notes).length, 0)
     };
 }
 

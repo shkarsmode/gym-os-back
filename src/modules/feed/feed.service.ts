@@ -13,26 +13,17 @@ import {
     NOTIFICATION_TYPES,
     REPORT_DETAILS_MAX_LENGTH
 } from "./feed.constants";
-
-// A page boundary is a POSITION, not an instant. Two items can share a timestamp —
-// achievements especially, since their unlock dates are computed deterministically — and
-// a plain `createdAt < cursor` silently dropped every one of them that tied with the last
-// item on the previous page.
-const REACTABLE_TYPES = new Set(["workout", "record", "achievement", "comment"]);
-
-interface FeedCursor {
-    at: Date;
-    type: string;
-    id: string;
-}
-
-interface FeedRow {
-    id: string;
-    type: "workout" | "achievement" | "record";
-    userId: string;
-    createdAt: Date;
-    payload: Record<string, unknown>;
-}
+import {
+    FeedCursor,
+    FeedRow,
+    REACTABLE_TYPES,
+    decodeFeedCursor,
+    encodeFeedCursor,
+    keysetWhere,
+    mergeFeedRows,
+    timelineAt,
+    workoutFeedPayload
+} from "./feed.timeline";
 
 @Injectable()
 export class FeedService {
@@ -136,7 +127,7 @@ export class FeedService {
     async feed(user: RequestUser, scope: string, cursor: string | undefined, limit?: number) {
         await this.ensureTables();
         const take = Math.min(Math.max(Number(limit) || FEED_PAGE_SIZE, 1), FEED_MAX_PAGE_SIZE);
-        const before = decodeTime(cursor);
+        const before = decodeFeedCursor(cursor);
         const mineOnly = scope === "mine";
         const rows: FeedRow[] = [];
 
@@ -166,31 +157,12 @@ export class FeedService {
                 if (!workout) {
                     continue;
                 }
-                const sets = workout.exercises.flatMap((item) => item.sets.filter((set) => set.isCompleted));
                 rows.push({
                     id: workout.id,
                     type: "workout",
                     userId: workout.userId,
                     createdAt: timing.feedAt,
-                    payload: {
-                        title: workout.title,
-                        workoutType: workout.workoutType,
-                        date: workout.date,
-                        exerciseCount: workout.exercises.length,
-                        setCount: sets.length,
-                        volumeKg: round(sets.reduce((sum, set) => sum + Number(set.weight) * set.repetitions, 0)),
-                        cardioMinutes: workout.cardioSessions.reduce((sum, item) => sum + (item.durationMinutes || 0), 0),
-                        durationMinutes: workout.durationOverride
-                            ?? (workout.startedAt && workout.finishedAt
-                                ? Math.round((workout.finishedAt.getTime() - workout.startedAt.getTime()) / 60000)
-                                : null),
-                        // A short preview so a card can show what was trained without a
-                        // second request; the full breakdown lives in the detail view.
-                        exercises: workout.exercises.slice(0, 4).map((item) => ({
-                            name: item.exercise?.name || "Вправа",
-                            sets: item.sets.filter((set) => set.isCompleted).length
-                        }))
-                    }
+                    payload: workoutFeedPayload(workout)
                 });
             }
         }
@@ -251,10 +223,7 @@ export class FeedService {
             }
         }
 
-        rows.sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
-        const page = rows.slice(0, take);
-        const last = page[page.length - 1];
-        const nextCursor = rows.length > take && last ? encodeTime({ at: last.createdAt, type: last.type, id: last.id }) : null;
+        const { page, nextCursor } = mergeFeedRows(rows, take);
 
         const [authors, reactions, commentCounts] = await Promise.all([
             this.authorMap(page.map((row) => row.userId)),
@@ -673,7 +642,7 @@ export class FeedService {
     // ---- Notifications ----------------------------------------------------
     async notifications(user: RequestUser, cursor?: string) {
         await this.ensureTables();
-        const before = decodeTime(cursor);
+        const before = decodeFeedCursor(cursor);
         const rows = await this.prisma.notification.findMany({
             where: { userId: user.id, ...(before ? { createdAt: { lt: before.at } } : {}) },
             orderBy: { createdAt: "desc" },
@@ -695,7 +664,7 @@ export class FeedService {
             })),
             unread,
             nextCursor: rows.length > page.length && page.length
-                ? encodeTime({ at: page[page.length - 1].createdAt, type: "notification", id: page[page.length - 1].id })
+                ? encodeFeedCursor({ at: page[page.length - 1].createdAt, type: "notification", id: page[page.length - 1].id })
                 : null
         };
     }
@@ -818,47 +787,3 @@ function round(value: number): number {
 // Time cursors are opaque base64url — a position, never an identifier. Unparseable
 // input restarts the list rather than erroring, because the client cannot recover
 // from a 500 here but it can recover from an empty cursor.
-// The session's calendar date carrying the clock time it was finished. Mirrors the SQL
-// expression in workoutTimeline() — keep the two in step.
-function timelineAt(date: Date, clock: Date): Date {
-    const value = new Date(date);
-    value.setUTCHours(clock.getUTCHours(), clock.getUTCMinutes(), clock.getUTCSeconds(), clock.getUTCMilliseconds());
-    return value;
-}
-
-// Row-wise "strictly after the cursor position" for a source keyed on `field`. Items that
-// tie with the boundary instant are kept unless they sort at-or-before it by id, so a
-// batch of achievements sharing one unlockedAt can no longer vanish at a page boundary.
-function keysetWhere(field: string, cursor: FeedCursor, type: string) {
-    if (cursor.type !== type || !cursor.id) {
-        return { [field]: { lt: cursor.at } } as Record<string, unknown>;
-    }
-    return {
-        OR: [
-            { [field]: { lt: cursor.at } },
-            { [field]: cursor.at, id: { lt: cursor.id } }
-        ]
-    } as Record<string, unknown>;
-}
-
-function encodeTime(position: FeedCursor): string {
-    return Buffer.from(JSON.stringify({ t: position.at.toISOString(), y: position.type, i: position.id }), "utf8").toString("base64url");
-}
-
-function decodeTime(cursor?: string): FeedCursor | null {
-    if (!cursor) {
-        return null;
-    }
-    try {
-        const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
-        const date = new Date(parsed.t);
-        if (!Number.isFinite(date.getTime())) {
-            return null;
-        }
-        // `y`/`i` are absent in cursors minted before the keyset upgrade; such a cursor
-        // still paginates, it just keeps the old strict-timestamp behaviour for one page.
-        return { at: date, type: typeof parsed.y === "string" ? parsed.y : "", id: typeof parsed.i === "string" ? parsed.i : "" };
-    } catch (error) {
-        return null;
-    }
-}
