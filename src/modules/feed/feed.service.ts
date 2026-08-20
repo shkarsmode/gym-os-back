@@ -282,6 +282,52 @@ export class FeedService {
         return rows.map((row) => ({ id: row.id, feedAt: new Date(row.feedAt) }));
     }
 
+    // The payload shape mirrors what feed() emits for the same type, so the post screen can
+    // render a record or an achievement with exactly the renderer it already has.
+    private async nonWorkoutDetail(targetType: string, targetId: string) {
+        if (targetType === "record") {
+            const record = await this.prisma.personalRecord.findUnique({
+                where: { id: targetId },
+                include: {
+                    exercise: { select: { name: true } },
+                    user: { select: { id: true, displayName: true, avatarUrl: true } }
+                }
+            });
+            if (!record) {
+                return null;
+            }
+            return {
+                author: record.user,
+                createdAt: record.recordedAt,
+                exercise: record.exercise?.name || "Вправа",
+                weightKg: round(Number(record.weight ?? record.value)),
+                repetitions: record.repetitions,
+                estimatedOneRepMax: round(Number(record.estimatedOneRepMax ?? 0)),
+                recordType: record.type
+            };
+        }
+        if (targetType === "achievement") {
+            const unlocked = await this.prisma.userAchievement.findUnique({
+                where: { id: targetId },
+                include: {
+                    achievement: { select: { title: true, description: true, category: true } },
+                    user: { select: { id: true, displayName: true, avatarUrl: true } }
+                }
+            });
+            if (!unlocked) {
+                return null;
+            }
+            return {
+                author: unlocked.user,
+                createdAt: unlocked.unlockedAt,
+                title: unlocked.achievement?.title || "Досягнення",
+                description: unlocked.achievement?.description || "",
+                category: unlocked.achievement?.category || ""
+            };
+        }
+        return null;
+    }
+
     private async authorMap(userIds: string[]) {
         const unique = [...new Set(userIds.filter(Boolean))];
         if (!unique.length) {
@@ -335,13 +381,21 @@ export class FeedService {
     async item(user: RequestUser, targetType: string, targetId: string) {
         await this.ensureTables();
         if (targetType !== "workout") {
-            const [reactions, comments] = await Promise.all([
+            // Records and achievements used to return only reactions and comments, so the
+            // post screen rendered an empty card titled "Пост" with a bare dot where the
+            // author and the achievement should be. Load the row itself.
+            const [reactions, comments, detail] = await Promise.all([
                 this.reactionState(user.id, [targetId]),
-                this.comments(user, targetType, targetId)
+                this.comments(user, targetType, targetId),
+                this.nonWorkoutDetail(targetType, targetId)
             ]);
+            if (!detail) {
+                throw new NotFoundException("Post not found");
+            }
             return {
                 type: targetType,
                 id: targetId,
+                ...detail,
                 reactions: reactions.get(`${targetType}:${targetId}`) || { count: 0, mine: false },
                 comments: comments.items
             };
