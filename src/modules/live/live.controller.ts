@@ -40,6 +40,11 @@ export class LiveController {
         return this.live.presence();
     }
 
+    @Get("peers")
+    peers(@CurrentUser() user: RequestUser) {
+        return this.live.peers(user);
+    }
+
     @Get("cheers/:workoutId")
     cheers(@CurrentUser() user: RequestUser, @Param("workoutId") workoutId: string) {
         return this.live.cheersFor(user, workoutId);

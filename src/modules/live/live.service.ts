@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { serializeWorkoutSummary } from "../../shared/serialize";
 import { RequestUser } from "../../shared/current-user.decorator";
 import { LiveBus } from "./live.bus";
 import { CHEER_EMOJI, cheerCooldown } from "./live.rules";
@@ -17,6 +18,10 @@ import { CHEER_EMOJI, cheerCooldown } from "./live.rules";
 // collide with the like on the same workout — FeedReaction's unique key is
 // (userId, targetType, targetId) and does not include `kind`.
 const CHEER_TARGET = "cheer";
+
+// Matches the peer window /export uses, so the two never disagree about which of
+// somebody else's sessions this client is supposed to be holding.
+const PEER_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class LiveService {
@@ -67,9 +72,23 @@ export class LiveService {
         };
     }
 
-    /** Nudge every connected device to re-read presence. Called when a session opens or closes. */
-    announcePresence(): void {
-        this.bus.broadcast({ name: "presence.changed", at: new Date().toISOString() });
+    /**
+     * Everyone else's recent sessions, as summaries.
+     *
+     * The same rows and the same 60-day window /export sends at boot, so a client that
+     * hears "the team moved" can refresh the calendar, the day sheet and the activity
+     * feed without re-downloading the entire boot payload — which is several hundred
+     * kilobytes and includes the whole exercise catalogue.
+     *
+     * Summaries, exactly like /export: aggregates but not a single set.
+     */
+    async peers(user: RequestUser) {
+        const rows = await this.prisma.workout.findMany({
+            where: { userId: { not: user.id }, date: { gte: new Date(Date.now() - PEER_WINDOW_MS) } },
+            include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true },
+            orderBy: { date: "desc" }
+        });
+        return { workouts: rows.map(serializeWorkoutSummary) };
     }
 
     async cheer(user: RequestUser, workoutId: string, emoji: string) {
@@ -78,10 +97,19 @@ export class LiveService {
             // screens, and an open field there is an invitation to put something else in it.
             throw new BadRequestException("Unknown cheer");
         }
-        const workout = await this.prisma.workout.findUnique({
-            where: { id: workoutId },
-            select: { id: true, userId: true, status: true }
-        });
+        const [workout, actor] = await Promise.all([
+            this.prisma.workout.findUnique({
+                where: { id: workoutId },
+                select: { id: true, userId: true, status: true }
+            }),
+            // The recipient has to be able to see WHO is cheering, and a name alone is
+            // weak at a glance — the face is what identifies a training partner.
+            // RequestUser carries no avatar, so it is read here.
+            this.prisma.user.findUnique({
+                where: { id: user.id },
+                select: { displayName: true, avatarUrl: true }
+            })
+        ]);
         if (!workout) {
             throw new NotFoundException("Workout not found");
         }
@@ -119,8 +147,8 @@ export class LiveService {
                     workoutId,
                     actor: {
                         id: user.id,
-                        displayName: user.displayName || "",
-                        avatarUrl: null
+                        displayName: actor?.displayName || user.displayName || "",
+                        avatarUrl: actor?.avatarUrl || null
                     }
                 }
             });

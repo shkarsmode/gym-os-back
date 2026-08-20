@@ -34,15 +34,28 @@ export class WorkoutsService {
      * a failure here can never corrupt anything: the write has already committed and the
      * worst case is the old behaviour of finding out on the next refresh.
      */
-    private announce(userId: string, name: "workout.changed" | "workout.deleted", ids: string[], version?: string | null) {
+    private announce(
+        userId: string,
+        name: "workout.changed" | "workout.deleted",
+        ids: string[],
+        version?: string | null,
+        // Whether this write changed something OTHER people can see: the session opened
+        // or closed, the first set was ticked, the row appeared or vanished.
+        //
+        // Deliberately not "always". saveFull runs on every autosave — several times a
+        // minute for the whole length of a session — and telling the entire gym to
+        // re-read on each of those turns one person training into a steady broadcast to
+        // every connected device that changes nothing on any of their screens.
+        peerVisible = false
+    ) {
         if (!this.live || !userId || !ids.length) {
             return;
         }
         try {
             this.live.publish(userId, { name, ids, version: version ?? null, at: new Date().toISOString() });
-            // A session opening or closing changes who is visibly in the gym, which is
-            // true for everyone rather than just this account's devices.
-            this.live.broadcast({ name: "presence.changed", at: new Date().toISOString() });
+            if (peerVisible) {
+                this.live.broadcast({ name: "team.changed", ids, at: new Date().toISOString() });
+            }
         } catch (error) {
             // Never let a notification failure surface as a failed save.
         }
@@ -132,6 +145,8 @@ export class WorkoutsService {
                 id: true,
                 userId: true,
                 updatedAt: true,
+                status: true,
+                firstSetAt: true,
                 startedAt: true,
                 finishedAt: true,
                 _count: { select: { exercises: true } }
@@ -325,7 +340,14 @@ export class WorkoutsService {
             ?? (await this.prisma.workout.findUnique({ where: { id }, select: { updatedAt: true } }))?.updatedAt;
         // The saved row plus anything this save closed as a side effect: a device showing
         // the superseded session as still running has to hear about it too.
-        this.announce(ownerId, "workout.changed", [id, ...closedOtherIds], updatedAt?.toISOString() || null);
+        // A brand-new row, a status change, or the first ticked set are the three things
+        // that alter what everyone else sees — the feed, the calendar and the "training
+        // now" strip. Everything else is this person adjusting their own numbers.
+        const peerVisible = !existing
+            || existing.status !== dto.status
+            || Boolean(existing.firstSetAt) !== Boolean(dto.firstSetAt)
+            || closedOtherIds.length > 0;
+        this.announce(ownerId, "workout.changed", [id, ...closedOtherIds], updatedAt?.toISOString() || null, peerVisible);
         return {
             ok: true,
             id,
@@ -361,7 +383,7 @@ export class WorkoutsService {
     async remove(userId: string, id: string, isAdmin = false) {
         const owner = await this.assertOwner(userId, id, isAdmin);
         await this.prisma.workout.delete({ where: { id } });
-        this.announce(owner?.userId || userId, "workout.deleted", [id]);
+        this.announce(owner?.userId || userId, "workout.deleted", [id], null, true);
         return { ok: true };
     }
 
@@ -383,7 +405,7 @@ export class WorkoutsService {
             data: { status: "active", startedAt: new Date(), finishedAt: null },
             include: this.includeWorkout()
         });
-        this.announce(userId, "workout.changed", [id, ...superseded.map((item) => item.id)], started.updatedAt?.toISOString());
+        this.announce(userId, "workout.changed", [id, ...superseded.map((item) => item.id)], started.updatedAt?.toISOString(), true);
         return started;
     }
 
@@ -397,7 +419,7 @@ export class WorkoutsService {
             })
         ]);
         const finished = await this.prisma.workout.findUnique({ where: { id }, include: this.includeWorkout() });
-        this.announce(userId, "workout.changed", [id], finished?.updatedAt?.toISOString());
+        this.announce(userId, "workout.changed", [id], finished?.updatedAt?.toISOString(), true);
         return finished;
     }
 

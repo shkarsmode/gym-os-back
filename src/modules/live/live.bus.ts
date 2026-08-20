@@ -21,7 +21,11 @@ import { Observable, Subject } from "rxjs";
  * replica B, and this needs a shared bus (Redis pub/sub) before that happens.
  */
 
-export type LiveEventName = "workout.changed" | "workout.deleted" | "presence.changed" | "cheer" | "hello" | "ping";
+// "team.changed" is the one event that goes to EVERYONE: something happened that alters
+// what the whole gym sees — a session opened or closed, somebody's first set was ticked,
+// a workout appeared or vanished. It stays a hint, so listeners re-read through the
+// routes they are already allowed to read.
+export type LiveEventName = "workout.changed" | "workout.deleted" | "team.changed" | "cheer" | "hello" | "ping";
 
 export interface LiveEvent {
     name: LiveEventName;
