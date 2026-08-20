@@ -49,6 +49,11 @@ export class UpdateWorkoutDto {
 }
 
 export class AddWorkoutExerciseDto {
+    /** The client's own id for this exercise block. See CreateWorkoutSetDto.id. */
+    @IsOptional()
+    @IsString()
+    id?: string;
+
     @IsString()
     exerciseId!: string;
 
@@ -72,6 +77,20 @@ export class UpdateWorkoutExerciseDto {
 }
 
 export class CreateWorkoutSetDto {
+    /**
+     * The client's own id for this set.
+     *
+     * Optional, and preserved verbatim when present. Until this existed the server
+     * generated a fresh cuid for every set on EVERY save — saveFull deletes the tree and
+     * recreates it — so no set had an identity that outlived a keystroke. That made a
+     * per-set realtime event unaddressable and any merge impossible, because "this set"
+     * could not be named. The client has always minted these ids locally; it simply never
+     * sent them.
+     */
+    @IsOptional()
+    @IsString()
+    id?: string;
+
     @IsIn(["warmup", "working", "drop", "failure", "backoff"])
     type!: "warmup" | "working" | "drop" | "failure" | "backoff";
 

@@ -329,11 +329,23 @@ export class WorkoutsService {
         };
 
         const exercisesCreate = exercises.map((exercise, index) => ({
+            // The client's own id, kept verbatim when it sends one.
+            //
+            // Every save deletes this workout's whole tree and recreates it, so without
+            // this a set's id changed on every keystroke-settle. Nothing could name "this
+            // set" across two saves — which is why a per-set realtime event was
+            // impossible and why editing somebody else's session could only ever have
+            // been edit-by-position, rewriting whatever happened to land in that slot.
+            //
+            // Safe to honour: the delete above removes the rows holding these ids inside
+            // the same transaction, so re-using them is not a collision.
+            ...(exercise.id ? { id: exercise.id } : {}),
             exerciseId: exercise.exerciseId,
             order: exercise.order ?? index + 1,
             notes: exercise.notes ?? null,
             sets: {
                 create: (exercise.sets || []).map((set) => ({
+                    ...(set.id ? { id: set.id } : {}),
                     type: (set.type || "working") as WorkoutSetType,
                     weight: Number(set.weight) || 0,
                     repetitions: Number(set.repetitions) || 0,
