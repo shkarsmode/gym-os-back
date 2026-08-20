@@ -582,20 +582,57 @@ export class WorkoutsService {
         });
     }
 
+    /**
+     * Tell everyone who is looking that this session moved.
+     *
+     * The targeted routes announced NOTHING, which was invisible while they were dead
+     * client-side and became a real bug the moment a training partner could use them:
+     * their edit landed in the database and the person whose workout it was saw nothing
+     * until they reloaded. Goes to the OWNER's devices — not the editor's — and to
+     * anybody watching the session.
+     */
+    private async announceTargetedWrite(workoutId: string) {
+        if (!this.live) {
+            return;
+        }
+        try {
+            const row = await this.prisma.workout.findUnique({
+                where: { id: workoutId },
+                select: { userId: true, updatedAt: true }
+            });
+            if (!row) {
+                return;
+            }
+            const at = new Date().toISOString();
+            const version = row.updatedAt?.toISOString() ?? null;
+            this.live.publish(row.userId, { name: "workout.changed", ids: [workoutId], version, at });
+            this.live.publishToWatchers(workoutId, { name: "workout.watch", ids: [workoutId], version, at });
+            if (this.partners) {
+                void this.partners.announceWorkout(row.userId, workoutId);
+            }
+        } catch (error) {
+            // A write that succeeded must not be reported as failed because nobody could
+            // be told about it.
+        }
+    }
+
     async updateExercise(userId: string, workoutId: string, workoutExerciseId: string, dto: UpdateWorkoutExerciseDto) {
         await this.assertWorkoutExerciseOwner(userId, workoutId, workoutExerciseId);
-        return this.prisma.workoutExercise.update({ where: { id: workoutExerciseId }, data: dto });
+        const updated = await this.prisma.workoutExercise.update({ where: { id: workoutExerciseId }, data: dto });
+        await this.announceTargetedWrite(workoutId);
+        return updated;
     }
 
     async deleteExercise(userId: string, workoutId: string, workoutExerciseId: string) {
         await this.assertWorkoutExerciseOwner(userId, workoutId, workoutExerciseId);
         await this.prisma.workoutExercise.delete({ where: { id: workoutExerciseId } });
+        await this.announceTargetedWrite(workoutId);
         return { ok: true };
     }
 
     async addSet(userId: string, workoutId: string, workoutExerciseId: string, dto: CreateWorkoutSetDto) {
         await this.assertWorkoutExerciseOwner(userId, workoutId, workoutExerciseId);
-        return this.prisma.workoutSet.create({
+        const created = await this.prisma.workoutSet.create({
             data: {
                 workoutExerciseId,
                 ...dto,
@@ -603,16 +640,21 @@ export class WorkoutsService {
                 isCompleted: dto.isCompleted ?? false
             }
         });
+        await this.announceTargetedWrite(workoutId);
+        return created;
     }
 
     async updateSet(userId: string, workoutId: string, workoutExerciseId: string, setId: string, dto: UpdateWorkoutSetDto) {
         await this.assertWorkoutExerciseOwner(userId, workoutId, workoutExerciseId);
-        return this.prisma.workoutSet.update({ where: { id: setId }, data: dto });
+        const updated = await this.prisma.workoutSet.update({ where: { id: setId }, data: dto });
+        await this.announceTargetedWrite(workoutId);
+        return updated;
     }
 
     async deleteSet(userId: string, workoutId: string, workoutExerciseId: string, setId: string) {
         await this.assertWorkoutExerciseOwner(userId, workoutId, workoutExerciseId);
         await this.prisma.workoutSet.delete({ where: { id: setId } });
+        await this.announceTargetedWrite(workoutId);
         return { ok: true };
     }
 
