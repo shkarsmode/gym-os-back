@@ -111,9 +111,12 @@ export class WorkoutsService {
             throw new NotFoundException("Workout not found");
         }
         const isOwner = owner.userId === callerId;
-        if (!isOwner && !isAdmin && owner.status !== "completed") {
-            throw new NotFoundException("Workout not found");
-        }
+        // There used to be a second, implicit privacy rule here: a peer's planned or
+        // in-progress session was refused outright. It predates this app having any real
+        // privacy model and now contradicts it — a session is shared by default, and the
+        // owner's own setting is the single thing that decides otherwise. Keeping both
+        // meant a teammate's live session read as "Деталі недоступні" to everyone,
+        // including people the owner had never hidden anything from.
         if (!isOwner && visibility && !visibility.canSeeDetail(owner.userId)) {
             // 403 with a code, not the 404 used above: the caller is meant to see that
             // this session exists and to be offered the chance to ask for access. Hiding
