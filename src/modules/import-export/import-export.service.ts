@@ -73,10 +73,16 @@ export class ImportExportService {
             // to every client and displayed nowhere.
             this.prisma.userBodyweightEntry.findMany({ where: { userId: user.id }, orderBy: { date: "asc" } }),
             this.prisma.workout.findMany({
-                // In windowed mode this fetch is scoped to the caller and limited; one
-                // extra row is taken so we can tell "there is another page" from "this
-                // is the end" without a second count query.
-                where: windowed ? { userId: user.id } : undefined,
+                // ALWAYS scoped to the caller. `shape` is an unvalidated query parameter,
+                // so this branch used to be reachable by simply omitting it — and with no
+                // where-clause it returned every workout of every member fully hydrated,
+                // handing out the whole gym's sets, weights and notes. That silently
+                // defeated the windowed payload's entire purpose ("without a single set
+                // crossing the wire" below): the private data was one missing URL
+                // parameter away. Peers are summaries in both shapes now.
+                where: { userId: user.id },
+                // Only the windowed shape paginates; one extra row tells "there is
+                // another page" from "this is the end" without a second count query.
                 take: windowed ? ownLimit + 1 : undefined,
                 include: {
                     exercises: { include: { sets: true }, orderBy: { order: "asc" } },
@@ -144,6 +150,19 @@ export class ImportExportService {
         let workoutsCursor: string | null = null;
         let scoring: Awaited<ReturnType<ScoringService["scoreEveryone"]>> | null = null;
         let ownSeq = new Map<string, number>();
+
+        if (!windowed) {
+            // The legacy shape keeps every own workout (no window, no cursor) — a client
+            // old enough to omit the parameter expects its full history — but peers come
+            // back as summaries exactly as they do in the windowed shape, so no set of
+            // anyone else's ever leaves the process.
+            const peers = await this.prisma.workout.findMany({
+                where: { userId: { not: user.id }, date: { gte: peerWindowStart } },
+                include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true },
+                orderBy: WORKOUT_PAGE_ORDER
+            });
+            peerSummaries = peers.map(serializeWorkoutSummary);
+        }
 
         if (windowed) {
             // The extra row taken above answers "is there more?" — drop it before
@@ -279,7 +298,7 @@ export class ImportExportService {
                 notes: item.notes || ""
             })),
             // Own workouts hydrated; peers as summaries with aggregates but no sets.
-            // In legacy mode peerSummaries is empty and this is every workout, as before.
+            // True in BOTH shapes — see the where-clause above for why that matters.
             workouts: [
                 ...ownWorkouts.map((item) => ({ ...serializeWorkout(item), seq: ownSeq.get(item.id) })),
                 ...peerSummaries
