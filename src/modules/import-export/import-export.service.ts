@@ -510,6 +510,8 @@ async function importWorkouts(transaction: any, userId: string, workouts: any[])
                 workoutType: workout.workoutType || "custom",
                 startedAt: workout.startedAt ? parseDate(workout.startedAt) : null,
                 finishedAt: workout.finishedAt ? parseDate(workout.finishedAt) : null,
+                firstSetAt: workout.firstSetAt ? parseDate(workout.firstSetAt) : null,
+                lastSetAt: workout.lastSetAt ? parseDate(workout.lastSetAt) : null,
                 durationOverride: workout.durationOverride === undefined || workout.durationOverride === null ? null : Math.round(Number(workout.durationOverride)),
                 notes: workout.notes || null,
                 exercises: {

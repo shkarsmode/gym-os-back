@@ -247,6 +247,15 @@ export class SaveWorkoutDto {
     @Max(1440)
     durationOverride?: number;
 
+    // Gym-clock marks. Owned by the client — only it knows the instant a set was ticked.
+    @IsOptional()
+    @IsDateString()
+    firstSetAt?: string;
+
+    @IsOptional()
+    @IsDateString()
+    lastSetAt?: string;
+
     @IsOptional()
     @IsArray()
     @ValidateNested({ each: true })

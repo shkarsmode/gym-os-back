@@ -8,6 +8,14 @@ import { WORKOUT_PAGE_ORDER, cursorFilter, decodeCursor, encodeCursor } from "..
 import { serializeWorkout } from "../../shared/serialize";
 import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 
+function parseOptionalDate(value?: string | null): Date | null {
+    if (!value) {
+        return null;
+    }
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date : null;
+}
+
 @Injectable()
 export class WorkoutsService {
     constructor(private readonly prisma: PrismaService) {}
@@ -147,6 +155,10 @@ export class WorkoutsService {
             notes: dto.notes ?? null,
             startedAt: timings.startedAt,
             finishedAt: timings.finishedAt,
+            // Stored verbatim: the client is the only party that knows when a set was
+            // actually ticked. An absent value clears the mark (all sets un-ticked).
+            firstSetAt: parseOptionalDate(dto.firstSetAt),
+            lastSetAt: parseOptionalDate(dto.lastSetAt),
             durationOverride: dto.durationOverride === undefined || dto.durationOverride === null ? null : Math.round(Number(dto.durationOverride))
         };
 

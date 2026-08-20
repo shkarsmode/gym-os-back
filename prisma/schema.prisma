@@ -179,6 +179,11 @@ model Workout {
   workoutType      String
   startedAt        DateTime?
   finishedAt       DateTime?
+  // When the FIRST set of this session was ticked off, and when the LAST one was. The
+  // span between them is "time actually spent in the gym" — deliberately NOT the
+  // workout's duration, because a session left open overnight would report nonsense.
+  firstSetAt       DateTime?
+  lastSetAt        DateTime?
   durationOverride Int?
   notes            String?
   createdAt        DateTime          @default(now())

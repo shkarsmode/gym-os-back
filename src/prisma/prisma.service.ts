@@ -102,6 +102,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "preferences" JSONB;'
             );
 
+            // Gym-clock marks: first and last completed set of a session. Nullable for
+            // every workout logged before this shipped — the UI simply shows no clock.
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "Workout" ADD COLUMN IF NOT EXISTS "firstSetAt" TIMESTAMP(3);'
+            );
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "Workout" ADD COLUMN IF NOT EXISTS "lastSetAt" TIMESTAMP(3);'
+            );
+
             // Year of birth, collected in the AI-coach onboarding. NULL for everyone who
             // has not filled it in — the coach simply omits age from its reasoning.
             await this.$executeRawUnsafe(

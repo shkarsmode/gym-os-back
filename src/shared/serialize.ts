@@ -32,6 +32,8 @@ type WorkoutRow = {
     workoutType: string;
     startedAt: Date | null;
     finishedAt: Date | null;
+    firstSetAt?: Date | null;
+    lastSetAt?: Date | null;
     durationOverride: number | null;
     notes: string | null;
     exercises: Array<{
@@ -143,6 +145,10 @@ export function serializeWorkout(item: WorkoutRow) {
         workoutType: item.workoutType,
         startedAt: item.startedAt?.toISOString() || null,
         finishedAt: item.finishedAt?.toISOString() || null,
+        // Gym-clock marks travel with the full row only; a peer summary has no use for
+        // them (the clock is a live affordance for your own session).
+        firstSetAt: item.firstSetAt?.toISOString() || null,
+        lastSetAt: item.lastSetAt?.toISOString() || null,
         durationOverride: item.durationOverride ?? null,
         notes: item.notes || "",
         exercises: item.exercises.map((exercise) => ({
