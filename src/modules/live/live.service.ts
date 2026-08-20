@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { serializeWorkoutSummary } from "../../shared/serialize";
+import { serializeWorkoutPrivate, serializeWorkoutSummary } from "../../shared/serialize";
+import { Visibility } from "../../shared/visibility";
 import { RequestUser } from "../../shared/current-user.decorator";
 import { LiveBus } from "./live.bus";
 import { CHEER_EMOJI, allowCheer, isCheerable, onePerPerson, presenceState, trimCheerHistory } from "./live.rules";
@@ -106,7 +107,6 @@ export class LiveService {
             select: {
                 id: true,
                 userId: true,
-                title: true,
                 status: true,
                 workoutType: true,
                 firstSetAt: true,
@@ -118,7 +118,8 @@ export class LiveService {
             training: onePerPerson(rows.map((row) => ({
                 workoutId: row.id,
                 userId: row.userId,
-                title: row.title,
+                // No title. It is free text, nothing in the strip renders it, and it is
+                // the field most likely to carry the very number a private member hid.
                 workoutType: row.workoutType,
                 state: presenceState(row.status, row.firstSetAt),
                 firstSetAt: row.firstSetAt?.toISOString() || null,
@@ -142,12 +143,37 @@ export class LiveService {
      * Summaries, exactly like /export: aggregates but not a single set.
      */
     async peers(user: RequestUser) {
-        const rows = await this.prisma.workout.findMany({
-            where: { userId: { not: user.id }, date: { gte: new Date(Date.now() - PEER_WINDOW_MS) } },
-            include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true },
-            orderBy: { date: "desc" }
-        });
-        return { workouts: rows.map(serializeWorkoutSummary) };
+        // Same split /export does. This route was added for the calendar refresh WITHOUT
+        // it, which shipped every member's workout title, notes and totals — volume, set
+        // count, exercise count — to the whole gym, including members who had explicitly
+        // hidden exactly those. And `team.changed` tells every client to re-fetch it.
+        const visibility = await Visibility.resolve(this.prisma, user);
+        const hidden = visibility.hiddenOwnerIds();
+        const since = new Date(Date.now() - PEER_WINDOW_MS);
+        const [open, closed] = await Promise.all([
+            this.prisma.workout.findMany({
+                where: { userId: { not: user.id, notIn: hidden }, date: { gte: since } },
+                include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true },
+                orderBy: { date: "desc" }
+            }),
+            hidden.length
+                ? this.prisma.workout.findMany({
+                    where: { userId: { in: hidden }, date: { gte: since } },
+                    // Scalars only — no join to WorkoutExercise or WorkoutSet is issued.
+                    select: {
+                        id: true, userId: true, date: true, status: true, workoutType: true,
+                        durationOverride: true, startedAt: true, finishedAt: true, updatedAt: true
+                    },
+                    orderBy: { date: "desc" }
+                })
+                : Promise.resolve([])
+        ]);
+        return {
+            workouts: [
+                ...open.map(serializeWorkoutSummary),
+                ...closed.map(serializeWorkoutPrivate)
+            ]
+        };
     }
 
     async cheer(user: RequestUser, workoutId: string, emoji: string) {
