@@ -268,6 +268,21 @@ export class SaveWorkoutDto {
     @Type(() => CreateCardioSessionDto)
     cardioSessions?: CreateCardioSessionDto[];
 
+    // Optimistic concurrency token: the `updatedAt` this client last saw for the row.
+    //
+    // saveFull is a destructive full replace — it deletes every set, exercise and cardio
+    // session and recreates them from this payload. With two devices on one account that
+    // makes the last writer win SILENTLY: the phone holding a copy from before the sets
+    // ticked on the desktop re-creates the tree without them, and the work is gone with
+    // no error anywhere. Sending the base version lets the server refuse instead.
+    //
+    // Optional on purpose. Older bundles omit it and keep the old last-writer-wins
+    // behaviour rather than being hard-failed by forbidNonWhitelisted, and a genuinely
+    // new workout has no base version to send.
+    @IsOptional()
+    @IsDateString()
+    baseUpdatedAt?: string;
+
     // Acknowledges that replacing a non-empty workout with zero exercises is intended.
     // Without it saveFull answers 409 rather than erasing the sets. Must be declared
     // here: ValidationPipe runs with forbidNonWhitelisted, so an undeclared property

@@ -103,6 +103,7 @@ export class WorkoutsService {
             select: {
                 id: true,
                 userId: true,
+                updatedAt: true,
                 startedAt: true,
                 finishedAt: true,
                 _count: { select: { exercises: true } }
@@ -110,6 +111,26 @@ export class WorkoutsService {
         });
         if (existing && existing.userId !== userId && !isAdmin) {
             throw new ForbiddenException("Cannot edit another user's workout");
+        }
+
+        // Optimistic concurrency. This endpoint replaces the whole tree, so a save built
+        // from a stale copy does not merge badly — it deletes whatever the other device
+        // added. Refusing here is what turns silent data loss into a recoverable 409 the
+        // client answers by re-reading and replaying its edit.
+        //
+        // Compared at second resolution: `updatedAt` crosses the wire as an ISO string
+        // and Postgres keeps microseconds, so an exact equality test would reject every
+        // legitimate save on a round-trip.
+        if (existing && dto.baseUpdatedAt) {
+            const base = Math.floor(new Date(dto.baseUpdatedAt).getTime() / 1000);
+            const current = Math.floor(existing.updatedAt.getTime() / 1000);
+            if (Number.isFinite(base) && base < current) {
+                throw new ConflictException({
+                    code: "STALE_WORKOUT",
+                    message: "This workout changed elsewhere since you loaded it. Re-read it and reapply the edit.",
+                    currentUpdatedAt: existing.updatedAt.toISOString()
+                });
+            }
         }
 
         // This endpoint is a destructive full replace: everything below deletes every
@@ -197,20 +218,32 @@ export class WorkoutsService {
         // they hang and the serverless function times out (surfaces as a browser
         // "CORS error"). The array form runs as a single batched BEGIN..COMMIT.
         const operations: any[] = [];
+        // Sessions this save closes as a side effect. Resolved to ids BEFORE the write
+        // rather than left as a blind updateMany, because the caller has to be able to
+        // tell the user's other devices which rows changed — an invalidation event that
+        // names only the saved workout leaves a session showing as active on the phone
+        // long after the desktop closed it.
+        let closedOtherIds: string[] = [];
         if (dto.status === "active") {
             // Starting a session closes the previous one — and a closed session has all
             // its sets marked done, same rule as finish().
-            operations.push(this.prisma.workoutSet.updateMany({
-                where: {
-                    isCompleted: false,
-                    workoutExercise: { workout: { userId: ownerId, status: "active", id: { not: id } } }
-                },
-                data: { isCompleted: true }
-            }));
-            operations.push(this.prisma.workout.updateMany({
+            closedOtherIds = (await this.prisma.workout.findMany({
                 where: { userId: ownerId, status: "active", id: { not: id } },
-                data: { status: "completed", finishedAt: new Date() }
-            }));
+                select: { id: true }
+            })).map((row) => row.id);
+            if (closedOtherIds.length) {
+                operations.push(this.prisma.workoutSet.updateMany({
+                    where: {
+                        isCompleted: false,
+                        workoutExercise: { workoutId: { in: closedOtherIds } }
+                    },
+                    data: { isCompleted: true }
+                }));
+                operations.push(this.prisma.workout.updateMany({
+                    where: { id: { in: closedOtherIds } },
+                    data: { status: "completed", finishedAt: new Date() }
+                }));
+            }
         }
         if (existing) {
             operations.push(this.prisma.workoutSet.deleteMany({
@@ -253,11 +286,22 @@ export class WorkoutsService {
             }));
         }
 
-        await this.prisma.$transaction(operations);
-        // Return a lightweight ack instead of a deep re-read: the client keeps its
-        // own optimistic state and ignores the body, so the extra query just slows
-        // the save down.
-        return { ok: true, id, status: dto.status };
+        const results = await this.prisma.$transaction(operations);
+        // Still a lightweight ack rather than a deep re-read — but it now carries the
+        // row's new version, which the client must hold to send as `baseUpdatedAt` on
+        // the next save. Without it the very first save would make every subsequent one
+        // look stale. The workout write is always the last queued operation, so its
+        // result is the fresh row; the re-read is only a fallback if that ever changes.
+        const written = results[results.length - 1] as { updatedAt?: Date } | undefined;
+        const updatedAt = written?.updatedAt
+            ?? (await this.prisma.workout.findUnique({ where: { id }, select: { updatedAt: true } }))?.updatedAt;
+        return {
+            ok: true,
+            id,
+            status: dto.status,
+            updatedAt: updatedAt?.toISOString() || null,
+            closedOtherIds
+        };
     }
 
     private deriveTimings(status: string, existing: { startedAt: Date | null; finishedAt: Date | null } | null) {

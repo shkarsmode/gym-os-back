@@ -35,10 +35,14 @@ function createPrisma(options: StubOptions = {}) {
         return op;
     };
 
+    const supersedeQueries: any[] = [];
     const prisma: any = {
         workout: {
             findUnique: async () => options.workout ?? null,
-            findMany: async () => options.activeWorkouts ?? [],
+            findMany: async (args: any) => {
+                supersedeQueries.push(args);
+                return options.activeWorkouts ?? [];
+            },
             count: async () => 0,
             create: write("workout", "create"),
             update: write("workout", "update"),
@@ -67,11 +71,12 @@ function createPrisma(options: StubOptions = {}) {
         }
     };
 
-    return { prisma: prisma as PrismaService, writes, transactions };
+    return { prisma: prisma as PrismaService, writes, transactions, supersedeQueries };
 }
 
 const USER = "user-owner";
 const WORKOUT = "workout-today";
+const OTHER_ACTIVE = "workout-earlier";
 
 function existingRow(overrides: Record<string, unknown> = {}) {
     return {
@@ -145,7 +150,12 @@ describe("saveFull marks the sets of a completed workout", () => {
     });
 
     it("keeps the incoming ticks verbatim while the session is still active", async () => {
-        const { prisma, transactions } = createPrisma({ workout: existingRow() });
+        const { prisma, transactions, supersedeQueries } = createPrisma({
+            workout: existingRow(),
+            // A session already running: without one there is nothing to supersede and the
+            // service correctly queues no closing write at all.
+            activeWorkouts: [{ id: OTHER_ACTIVE }]
+        });
         const service = new WorkoutsService(prisma);
 
         await service.saveFull(USER, WORKOUT, saveDto("active", [
@@ -175,7 +185,12 @@ describe("saveFull marks the sets of a completed workout", () => {
 
 describe("starting a session closes the previous one", () => {
     it("completes the sets of the user's previously active workout", async () => {
-        const { prisma, transactions } = createPrisma({ workout: existingRow() });
+        const { prisma, transactions, supersedeQueries } = createPrisma({
+            workout: existingRow(),
+            // A session already running: without one there is nothing to supersede and the
+            // service correctly queues no closing write at all.
+            activeWorkouts: [{ id: OTHER_ACTIVE }]
+        });
         const service = new WorkoutsService(prisma);
 
         await service.saveFull(USER, WORKOUT, saveDto("active", [
@@ -184,14 +199,21 @@ describe("starting a session closes the previous one", () => {
 
         const closeSets = oneOp(transactions[0], "workoutSet", "updateMany");
         expect(closeSets.args.data).toEqual({ isCompleted: true });
+        // The sessions to supersede are resolved to ids first (so the caller can tell the
+        // user's other devices which rows changed), then closed by id.
         expect(closeSets.args.where).toEqual({
             isCompleted: false,
-            workoutExercise: { workout: { userId: USER, status: "active", id: { not: WORKOUT } } }
+            workoutExercise: { workoutId: { in: [OTHER_ACTIVE] } }
         });
     });
 
     it("never touches the sets of the session being saved", async () => {
-        const { prisma, transactions } = createPrisma({ workout: existingRow() });
+        const { prisma, transactions, supersedeQueries } = createPrisma({
+            workout: existingRow(),
+            // A session already running: without one there is nothing to supersede and the
+            // service correctly queues no closing write at all.
+            activeWorkouts: [{ id: OTHER_ACTIVE }]
+        });
         const service = new WorkoutsService(prisma);
 
         await service.saveFull(USER, WORKOUT, saveDto("active", [
@@ -199,25 +221,41 @@ describe("starting a session closes the previous one", () => {
         ]));
 
         // Without `id: { not: ... }` starting a workout would instantly tick every set
-        // in it, and the user would open a session with nothing left to do.
+        // in it, and the user would open a session with nothing left to do. That
+        // exclusion now lives in the query that resolves the ids, so assert it there —
+        // and assert the workout being saved never reaches the closing write.
+        expect(supersedeQueries[0].where).toEqual({ userId: USER, status: "active", id: { not: WORKOUT } });
         const closeSets = oneOp(transactions[0], "workoutSet", "updateMany");
-        expect(closeSets.args.where.workoutExercise.workout.id).toEqual({ not: WORKOUT });
+        expect(closeSets.args.where.workoutExercise.workoutId.in).not.toContain(WORKOUT);
     });
 
     it("never touches another user's unfinished sets", async () => {
-        const { prisma, transactions } = createPrisma({ workout: existingRow() });
+        const { prisma, transactions, supersedeQueries } = createPrisma({
+            workout: existingRow(),
+            // A session already running: without one there is nothing to supersede and the
+            // service correctly queues no closing write at all.
+            activeWorkouts: [{ id: OTHER_ACTIVE }]
+        });
         const service = new WorkoutsService(prisma);
 
         await service.saveFull(USER, WORKOUT, saveDto("active", [
             { type: "working", weight: 60, repetitions: 10, isCompleted: false }
         ]));
 
+        // Scoping by owner moved to the resolving query; the write itself can only ever
+        // name ids that query returned.
+        expect(supersedeQueries[0].where.userId).toBe(USER);
         const closeSets = oneOp(transactions[0], "workoutSet", "updateMany");
-        expect(closeSets.args.where.workoutExercise.workout.userId).toBe(USER);
+        expect(closeSets.args.where.workoutExercise.workoutId).toEqual({ in: [OTHER_ACTIVE] });
     });
 
     it("closes the sets before flipping the old session to completed, in the same transaction", async () => {
-        const { prisma, transactions } = createPrisma({ workout: existingRow() });
+        const { prisma, transactions, supersedeQueries } = createPrisma({
+            workout: existingRow(),
+            // A session already running: without one there is nothing to supersede and the
+            // service correctly queues no closing write at all.
+            activeWorkouts: [{ id: OTHER_ACTIVE }]
+        });
         const service = new WorkoutsService(prisma);
 
         await service.saveFull(USER, WORKOUT, saveDto("active", [

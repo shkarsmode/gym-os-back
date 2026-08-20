@@ -32,6 +32,9 @@ type WorkoutRow = {
     workoutType: string;
     startedAt: Date | null;
     finishedAt: Date | null;
+    // Optional so a caller that selects a narrower row still type-checks; the
+    // serializers emit null rather than omitting the key when it was not selected.
+    updatedAt?: Date | null;
     firstSetAt?: Date | null;
     lastSetAt?: Date | null;
     durationOverride: number | null;
@@ -124,6 +127,9 @@ export function serializeWorkoutSummary(item: WorkoutRow) {
     return {
         id: item.id,
         userId: item.userId,
+        // The row's version. Carried on BOTH shapes so a client can tell whether the
+        // copy it holds is older than the one just announced, without re-reading it.
+        updatedAt: item.updatedAt?.toISOString() || null,
         date: dateInput(item.date),
         title: item.title,
         status: item.status,
@@ -139,6 +145,7 @@ export function serializeWorkout(item: WorkoutRow) {
         ...workoutAggregates(item),
         id: item.id,
         userId: item.userId,
+        updatedAt: item.updatedAt?.toISOString() || null,
         date: dateInput(item.date),
         title: item.title,
         status: item.status,
