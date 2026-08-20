@@ -62,6 +62,26 @@ export class LiveService {
      * one and a running timer next to them would be a lie.
      */
     async presence() {
+        // Who is training with whom right now. Read alongside presence rather than per
+        // row: with a handful of people in a gym this is one small query, and doing it
+        // per person would be one per row.
+        const pairs = await this.prisma.trainingPartnership.findMany({
+            where: { status: "active" },
+            select: {
+                hostId: true,
+                guestId: true,
+                host: { select: { id: true, displayName: true } },
+                guest: { select: { id: true, displayName: true } }
+            }
+        }).catch(() => []);
+        const partnerOf = new Map<string, { id: string; displayName: string }>();
+        for (const pair of pairs) {
+            if (pair.host && pair.guest) {
+                partnerOf.set(pair.hostId, pair.guest);
+                partnerOf.set(pair.guestId, pair.host);
+            }
+        }
+
         const rows = await this.prisma.workout.findMany({
             where: {
                 // TODAY only, for every state.
@@ -103,7 +123,10 @@ export class LiveService {
                 state: presenceState(row.status, row.firstSetAt),
                 firstSetAt: row.firstSetAt?.toISOString() || null,
                 displayName: row.user?.displayName || "",
-                avatarUrl: row.user?.avatarUrl || null
+                avatarUrl: row.user?.avatarUrl || null,
+                // Present only while a joint session is running, so the strip can say
+                // "training with X" without a second request.
+                partner: partnerOf.get(row.userId) || null
             })))
         };
     }

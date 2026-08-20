@@ -34,6 +34,13 @@ export class WorkoutsController {
         return this.workoutsService.findMine(user.id, Number(limit) || undefined, cursor);
     }
 
+    // MUST stay above @Get(":id") — declaration order decides matching.
+    @Get(":id/watch")
+    async watch(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+        const visibility = await Visibility.resolve(this.prisma, user);
+        return this.workoutsService.watch(id, user.id, isAdminUser(user), visibility);
+    }
+
     @Get(":id")
     async findOne(@CurrentUser() user: RequestUser, @Param("id") id: string) {
         // Resolved here rather than inside the service so the service keeps taking it as

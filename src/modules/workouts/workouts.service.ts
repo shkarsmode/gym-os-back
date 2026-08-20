@@ -7,7 +7,7 @@ import { parseDateInput } from "../../shared/parse-date";
 import { assertWorkoutQuota as enforceWorkoutQuota } from "../../shared/workout-quota";
 import { QuotaTier } from "../../shared/admin";
 import { WORKOUT_PAGE_ORDER, cursorFilter, decodeCursor, encodeCursor } from "../../shared/cursor";
-import { serializeWorkout } from "../../shared/serialize";
+import { dateInput, serializeWorkout } from "../../shared/serialize";
 import { Visibility } from "../../shared/visibility";
 import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 
@@ -154,6 +154,67 @@ export class WorkoutsService {
         // this row into its store got string weights and a date that no longer matched the
         // YYYY-MM-DD every other row carries.
         return serializeWorkout(workout);
+    }
+
+    /**
+     * A session to WATCH: the whole thing, plus what its owner did last time.
+     *
+     * Authorization is `findOne`'s, unchanged — this adds no new way in. What it adds is
+     * the previous-performance data, which the watcher cannot compute for themselves: the
+     * boot payload carries peers as summaries with no sets, so "минулого разу" would be
+     * blank on every exercise of somebody else's session.
+     *
+     * Only the single most recent completed instance of each exercise travels, which is
+     * exactly what the screen renders — not the owner's history.
+     */
+    async watch(id: string, callerId: string, isAdmin = false, visibility?: Visibility) {
+        const workout = await this.findOne(id, callerId, isAdmin, visibility);
+        const exerciseIds = [...new Set((workout.exercises || []).map((item) => item.exerciseId))];
+        if (!exerciseIds.length) {
+            return { workout, previous: {} };
+        }
+        // The owner's recent completed sessions, newest first, narrowed to the exercises
+        // actually in the session being watched.
+        const history = await this.prisma.workout.findMany({
+            where: {
+                userId: workout.userId,
+                status: "completed",
+                id: { not: id },
+                exercises: { some: { exerciseId: { in: exerciseIds } } }
+            },
+            orderBy: [{ date: "desc" }, { id: "desc" }],
+            take: 40,
+            select: {
+                date: true,
+                exercises: {
+                    where: { exerciseId: { in: exerciseIds } },
+                    select: {
+                        exerciseId: true,
+                        sets: { select: { weight: true, repetitions: true, type: true, isCompleted: true } }
+                    }
+                }
+            }
+        });
+        const previous: Record<string, { date: string; sets: Array<{ weight: number; repetitions: number }> }> = {};
+        for (const session of history) {
+            for (const item of session.exercises) {
+                if (previous[item.exerciseId]) {
+                    continue;
+                }
+                const sets = item.sets.filter((set) => set.isCompleted && set.type !== "warmup");
+                if (!sets.length) {
+                    continue;
+                }
+                previous[item.exerciseId] = {
+                    date: dateInput(session.date),
+                    sets: sets.map((set) => ({ weight: Number(set.weight) || 0, repetitions: set.repetitions }))
+                };
+            }
+            if (Object.keys(previous).length === exerciseIds.length) {
+                break;
+            }
+        }
+        return { workout, previous };
     }
 
     async create(userId: string, dto: CreateWorkoutDto, tier: QuotaTier = "free") {
