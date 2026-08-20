@@ -99,3 +99,76 @@ describe("who may watch whom", () => {
         await expect(service.activePartnerOf("stranger")).resolves.toBeNull();
     });
 });
+
+describe("edit rights", () => {
+    function withFlags(row: any) {
+        const updates: any[] = [];
+        const prisma: any = {
+            user: { findUnique: async ({ where }: any) => ({ id: where.id, displayName: where.id }) },
+            notification: { create: async () => ({}) },
+            trainingPartnership: {
+                findFirst: async ({ where }: any) => {
+                    if (where.id && row.id !== where.id) return null;
+                    if (where.status === "active" && row.status !== "active") return null;
+                    if (where.OR) {
+                        const ok = where.OR.some((clause: any) =>
+                            (clause.hostId === undefined || clause.hostId === row.hostId)
+                            && (clause.guestId === undefined || clause.guestId === row.guestId));
+                        if (!ok) return null;
+                    }
+                    return row;
+                },
+                findUnique: async () => row,
+                create: async ({ data }: any) => ({ id: "new", ...data }),
+                updateMany: async ({ where, data }: any) => {
+                    updates.push({ where, data });
+                    return { count: 1 };
+                }
+            }
+        };
+        const push = { sendToUser: async () => undefined } as unknown as PushService;
+        return { service: new PartnerService(prisma as PrismaService, new LiveBus(), push), updates };
+    }
+
+    const ACTIVE = { id: "p1", hostId: "host", guestId: "guest", status: "active", guestCanEdit: false, hostCanEdit: false };
+
+    it("the host opens THEIR OWN session, which is the guest's right to edit", async () => {
+        // The flag a caller may write is always the one granting access to their own
+        // data. Taking both in one call would let either side grant themselves access to
+        // the other's workout with nobody consenting.
+        const { service, updates } = withFlags({ ...ACTIVE });
+        await service.setEditRight(HOST, "p1", true);
+        expect(updates[0].data).toEqual({ guestCanEdit: true });
+    });
+
+    it("the guest opens their own, which is the host's right to edit", async () => {
+        const { service, updates } = withFlags({ ...ACTIVE });
+        await service.setEditRight(GUEST, "p1", true);
+        expect(updates[0].data).toEqual({ hostCanEdit: true });
+    });
+
+    it("a stranger cannot touch either flag", async () => {
+        const { service } = withFlags({ ...ACTIVE });
+        await expect(service.setEditRight({ id: "nobody", email: "n@e.com", displayName: "N" }, "p1", true))
+            .rejects.toThrow();
+    });
+
+    it("says no when the owner has not opened their session", async () => {
+        const { service } = withFlags({ ...ACTIVE });
+        await expect(service.canEdit("guest", "host")).resolves.toBe(false);
+    });
+
+    it("says yes only in the direction that was granted", async () => {
+        const { service } = withFlags({ ...ACTIVE, guestCanEdit: true });
+        // The host opened theirs: the guest may edit the host's.
+        await expect(service.canEdit("guest", "host")).resolves.toBe(true);
+        // The reverse was never granted.
+        await expect(service.canEdit("host", "guest")).resolves.toBe(false);
+    });
+
+    it("says no once the session has ended", async () => {
+        // Re-read on every write precisely so a right cannot outlive being taken away.
+        const { service } = withFlags({ ...ACTIVE, status: "ended", guestCanEdit: true });
+        await expect(service.canEdit("guest", "host")).resolves.toBe(false);
+    });
+});

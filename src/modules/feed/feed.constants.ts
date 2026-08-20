@@ -24,7 +24,8 @@ export const NOTIFICATION_TYPES = {
     ACCESS_REQUEST: "access_request",
     ACCESS_GRANTED: "access_granted",
     PARTNER_INVITE: "partner_invite",
-    PARTNER_JOINED: "partner_joined"
+    PARTNER_JOINED: "partner_joined",
+    PARTNER_EDIT_GRANTED: "partner_edit_granted"
 } as const;
 
 // Defaults for the per-user push switches: direct interactions with YOUR content are
@@ -47,5 +48,6 @@ export const PUSH_DEFAULTS: Record<string, boolean> = {
     // An invitation to train together is only useful in the next few minutes — someone
     // is standing in a gym waiting for an answer. Off by default would make it useless.
     partner_invite: true,
-    partner_joined: true
+    partner_joined: true,
+    partner_edit_granted: true
 };

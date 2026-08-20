@@ -10,7 +10,7 @@ import { PartnerService } from "./partner.service";
 import { CHEER_EMOJI } from "./live.rules";
 import { CheerDto } from "./dto/cheer.dto";
 import { StopWatchDto, WatchDto } from "./dto/watch.dto";
-import { InvitePartnerDto } from "./dto/partner.dto";
+import { EditRightDto, InvitePartnerDto } from "./dto/partner.dto";
 
 // A comment frame often enough to beat any idle timeout between here and the phone, and
 // often enough that a connection dropped by a sleeping radio is noticed in seconds rather
@@ -50,6 +50,11 @@ export class LiveController {
     @Post("partner/:id/accept")
     acceptPartner(@CurrentUser() user: RequestUser, @Param("id") id: string) {
         return this.partner.accept(user, id);
+    }
+
+    @Post("partner/:id/edit-right")
+    setEditRight(@CurrentUser() user: RequestUser, @Param("id") id: string, @Body() dto: EditRightDto) {
+        return this.partner.setEditRight(user, id, dto.allow);
     }
 
     @Post("partner/:id/leave")

@@ -175,6 +175,19 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 CONSTRAINT "TrainingPartnership_hostId_fkey" FOREIGN KEY ("hostId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
                 CONSTRAINT "TrainingPartnership_guestId_fkey" FOREIGN KEY ("guestId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
             )`);
+            // Who may edit whose sets during this session.
+            //
+            // `guestCanEdit` opens the HOST's workout to the guest, so only the HOST may
+            // set it — and the reverse for the other. A single "permissions" call that
+            // wrote both would let either side grant themselves access to the other's
+            // data with no consent from its owner, which is the most likely shortcut and
+            // the wrong one.
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "TrainingPartnership" ADD COLUMN IF NOT EXISTS "guestCanEdit" BOOLEAN NOT NULL DEFAULT false;'
+            );
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "TrainingPartnership" ADD COLUMN IF NOT EXISTS "hostCanEdit" BOOLEAN NOT NULL DEFAULT false;'
+            );
             await this.$executeRawUnsafe(
                 'CREATE INDEX IF NOT EXISTS "TrainingPartnership_hostId_status_idx" ON "TrainingPartnership"("hostId","status");'
             );

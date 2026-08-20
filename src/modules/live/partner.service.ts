@@ -7,11 +7,16 @@ import { LiveBus } from "./live.bus";
 /**
  * Training together: two people watching each other's sets as they happen.
  *
- * READ-ONLY in both directions. Editing a partner's session is not merely unbuilt — it is
- * not currently possible to build honestly: `saveFull` regenerates every set and exercise
- * id on each save, so there is no stable handle to address "this set" with, and any
- * edit-by-position would rewrite whatever happened to be in that slot by the time it
- * arrived. Stable ids are the prerequisite; until then a partner watches.
+ * Read-only by default, and editable only if the OWNER opens their own session — a flag
+ * per direction, each writable by the person whose data it exposes. This became buildable
+ * once set ids stopped being regenerated on every save: before that there was no stable
+ * handle to address "this set" with, and an edit could only have been by POSITION,
+ * rewriting whatever happened to land in that slot by the time the request arrived.
+ *
+ * A partner's writes go through the narrow targeted routes only, never saveFull: that one
+ * deletes the whole tree and recreates it, and with status "active" also closes every
+ * other session its owner has open. Handing it to somebody else would be handing them
+ * "erase this person's workout".
  *
  * What travels is a HINT, exactly like everything else on this stream: "your partner's
  * session moved". The watcher answers by re-reading through GET /workouts/:id, which is
@@ -50,6 +55,11 @@ export class PartnerService {
             partnership: {
                 id: row.id,
                 status: row.status,
+                // Named from THIS person's point of view, because that is how the switch
+                // in front of them reads: "may they edit mine" is the one they control,
+                // "may I edit theirs" is the one the other person controls.
+                partnerCanEditMine: iAmHost ? row.guestCanEdit : row.hostCanEdit,
+                iCanEditTheirs: iAmHost ? row.hostCanEdit : row.guestCanEdit,
                 // "Did I send this or receive it" decides whether the UI offers Accept or
                 // Cancel, and it is the one thing the row itself cannot say.
                 incoming: !iAmHost && row.status === "pending",
@@ -89,8 +99,31 @@ export class PartnerService {
                     : "Ця людина вже тренується з кимось"
             );
         }
+        // What these two settled on last time. Somebody who has already been trusted to
+        // edit does not have to be granted again on every session — and revoking last
+        // time is remembered just as faithfully.
+        const previous = await this.prisma.trainingPartnership.findFirst({
+            where: {
+                status: "ended",
+                OR: [
+                    { hostId: user.id, guestId: partnerId },
+                    { hostId: partnerId, guestId: user.id }
+                ]
+            },
+            orderBy: { endedAt: "desc" },
+            select: { hostId: true, guestCanEdit: true, hostCanEdit: true }
+        }).catch(() => null);
+        // The stored flags are relative to the OLD row's host/guest, which may be the
+        // other way round this time.
+        const sameOrientation = !previous || previous.hostId === user.id;
         const created = await this.prisma.trainingPartnership.create({
-            data: { hostId: user.id, guestId: partnerId, status: "pending" }
+            data: {
+                hostId: user.id,
+                guestId: partnerId,
+                status: "pending",
+                guestCanEdit: previous ? (sameOrientation ? previous.guestCanEdit : previous.hostCanEdit) : false,
+                hostCanEdit: previous ? (sameOrientation ? previous.hostCanEdit : previous.guestCanEdit) : false
+            }
         });
         await this.notify(partnerId, {
             type: "partner_invite",
@@ -143,6 +176,63 @@ export class PartnerService {
         // just stopped being live.
         this.publish([row.hostId, row.guestId], "partner.changed");
         return { ok: true };
+    }
+
+    /**
+     * Open or close YOUR OWN session to the person you are training with.
+     *
+     * The flag a caller may write is always the one that grants access to their own data:
+     * the host sets `guestCanEdit`, the guest sets `hostCanEdit`. A single call that took
+     * both would let either side grant themselves access to the other's workout with no
+     * consent from the person who owns it.
+     */
+    async setEditRight(user: RequestUser, id: string, allow: boolean) {
+        const row = await this.prisma.trainingPartnership.findFirst({
+            where: { id, status: "active", OR: [{ hostId: user.id }, { guestId: user.id }] }
+        });
+        if (!row) {
+            throw new NotFoundException("Session not found");
+        }
+        const iAmHost = row.hostId === user.id;
+        await this.prisma.trainingPartnership.updateMany({
+            where: { id, status: "active" },
+            data: iAmHost ? { guestCanEdit: allow } : { hostCanEdit: allow }
+        });
+        const other = iAmHost ? row.guestId : row.hostId;
+        if (allow) {
+            await this.notify(other, {
+                type: "partner_edit_granted",
+                actorId: user.id,
+                preview: `${user.displayName} дозволив редагувати своє тренування`
+            });
+        }
+        this.publish([row.hostId, row.guestId], "partner.changed");
+        return { ok: true };
+    }
+
+    /**
+     * May this person edit that person's sets right now?
+     *
+     * Re-read on EVERY write, never cached: ending the session or flipping the switch has
+     * to take effect immediately, and a right resolved once at the start of a session is
+     * a right that outlives being taken away.
+     */
+    async canEdit(actorId: string, ownerId: string): Promise<boolean> {
+        const row = await this.prisma.trainingPartnership.findFirst({
+            where: {
+                status: "active",
+                OR: [
+                    { hostId: ownerId, guestId: actorId },
+                    { hostId: actorId, guestId: ownerId }
+                ]
+            },
+            select: { hostId: true, guestCanEdit: true, hostCanEdit: true }
+        });
+        if (!row) {
+            return false;
+        }
+        // The owner is the host: the guest edits only if the host allowed it.
+        return row.hostId === ownerId ? row.guestCanEdit : row.hostCanEdit;
     }
 
     /**

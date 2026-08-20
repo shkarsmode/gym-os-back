@@ -508,6 +508,11 @@ model TrainingPartnership {
   hostId    String
   guestId   String
   status    String    @default("pending")
+  /// guestCanEdit opens the HOST's workout to the guest, so only the host may set it.
+  /// hostCanEdit is the mirror. Never both from one call: that would let either side
+  /// grant themselves access to the other's data without its owner consenting.
+  guestCanEdit Boolean @default(false)
+  hostCanEdit  Boolean @default(false)
   startedAt DateTime?
   endedAt   DateTime?
   createdAt DateTime  @default(now())

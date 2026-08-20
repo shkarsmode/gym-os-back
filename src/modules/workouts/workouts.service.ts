@@ -632,6 +632,27 @@ export class WorkoutsService {
         return { ok: true };
     }
 
+    private async assertOwnerOrEditor(userId: string, workoutId: string) {
+        const workout = await this.prisma.workout.findUnique({ where: { id: workoutId } });
+        if (!workout) {
+            throw new NotFoundException("Workout not found");
+        }
+        if (workout.userId === userId) {
+            return workout;
+        }
+        const allowed = this.partners
+            ? await this.partners.canEdit(userId, workout.userId).catch(() => false)
+            : false;
+        if (!allowed) {
+            throw new ForbiddenException("Cannot edit another user's workout");
+        }
+        // Only a session they are actually training alongside, not the whole history.
+        if (workout.status !== "active") {
+            throw new ForbiddenException("Cannot edit another user's workout");
+        }
+        return workout;
+    }
+
     private async assertOwner(userId: string, workoutId: string, isAdmin = false) {
         const workout = await this.prisma.workout.findUnique({ where: { id: workoutId } });
         if (!workout) {
@@ -643,8 +664,21 @@ export class WorkoutsService {
         return workout;
     }
 
+    /**
+     * May this person write to this exercise block?
+     *
+     * Ownership, or an active training partnership in which the OWNER has opened their
+     * session. Re-read on every write, never cached: ending the session or turning the
+     * switch off has to take effect at once, and a right resolved once at the start of a
+     * session is a right that outlives being taken away.
+     *
+     * Note this is the NARROW path — a partner reaches sets through these targeted routes
+     * and never through saveFull, which deletes the whole tree and recreates it and
+     * which, with `status: "active"`, also closes every other session its owner has open.
+     * Handing that to somebody else would be handing them "erase this person's workout".
+     */
     private async assertWorkoutExerciseOwner(userId: string, workoutId: string, workoutExerciseId: string) {
-        await this.assertOwner(userId, workoutId);
+        await this.assertOwnerOrEditor(userId, workoutId);
         const workoutExercise = await this.prisma.workoutExercise.findFirst({
             where: { id: workoutExerciseId, workoutId }
         });
