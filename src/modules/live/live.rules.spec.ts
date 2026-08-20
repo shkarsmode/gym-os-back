@@ -72,8 +72,26 @@ describe("presence state", () => {
 describe("who can be cheered", () => {
     const today = new Date("2026-08-20T18:00:00");
 
-    it("anyone with a session running", () => {
+    it("anyone with a session running today", () => {
         expect(isCheerable("active", new Date("2026-08-20T00:00:00"), today)).toBe(true);
+    });
+
+    it("but NOT a session left open weeks ago and abandoned", () => {
+        // Nothing expires "active" server-side, and the client only heals its own
+        // owner's rows — and only when that owner opens the app. So a workout somebody
+        // walked away from stays active forever and sat in the strip permanently,
+        // showing a person as warming up who had not opened the app in weeks.
+        expect(isCheerable("active", new Date("2026-07-05T00:00:00"), today)).toBe(false);
+        expect(isCheerable("active", new Date("2026-08-19T00:00:00"), today, null)).toBe(false);
+    });
+
+    it("unless its clock is genuinely still running past midnight", () => {
+        // A session that started at 23:30 belongs here at 00:15.
+        const justAfterMidnight = new Date("2026-08-21T00:15:00");
+        const startedYesterday = new Date("2026-08-20T00:00:00");
+        expect(isCheerable("active", startedYesterday, justAfterMidnight, new Date("2026-08-21T00:10:00"))).toBe(true);
+        // ...but not one whose last set was six hours ago.
+        expect(isCheerable("active", startedYesterday, justAfterMidnight, new Date("2026-08-20T18:00:00"))).toBe(false);
     });
 
     it("anyone who planned one for today", () => {

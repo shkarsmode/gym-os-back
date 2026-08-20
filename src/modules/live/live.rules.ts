@@ -61,10 +61,22 @@ export function presenceState(status: string, firstSetAt: Date | null | undefine
     return "planned";
 }
 
-/** Whether a session is one somebody can still be cheered through. */
-export function isCheerable(status: string, date: Date, now: Date): boolean {
+export const GYM_CLOCK_MAX_MS = 5 * 60 * 60 * 1000;
+
+/**
+ * Whether a session is one somebody can still be cheered through.
+ *
+ * Being "active" is not enough on its own: nothing expires that status server-side, so a
+ * workout somebody opened weeks ago and walked away from stays active indefinitely. It
+ * has to be TODAY's session — or one whose clock is genuinely still running, which is how
+ * a session that crossed midnight stays cheerable.
+ */
+export function isCheerable(status: string, date: Date, now: Date, lastSetAt?: Date | null): boolean {
     if (status === "active") {
-        return true;
+        if (sameLocalDay(date, now)) {
+            return true;
+        }
+        return Boolean(lastSetAt) && now.getTime() - (lastSetAt as Date).getTime() < GYM_CLOCK_MAX_MS;
     }
     // A session planned for next Tuesday is not somebody to cheer on right now.
     return status === "planned" && sameLocalDay(date, now);

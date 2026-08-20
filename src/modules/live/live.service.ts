@@ -23,6 +23,10 @@ const CHEER_TARGET = "cheer";
 // somebody else's sessions this client is supposed to be holding.
 const PEER_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
 
+// Matches the gym clock's own cutoff in gym-os-front/lib/gym-clock.js: past this the
+// clock stops pretending a session is live, and so does this.
+const GYM_CLOCK_MAX_MS = 5 * 60 * 60 * 1000;
+
 function startOfToday(): Date {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -60,8 +64,20 @@ export class LiveService {
     async presence() {
         const rows = await this.prisma.workout.findMany({
             where: {
+                // TODAY only, for every state.
+                //
+                // "status: active" on its own is not a person in a gym — it is a row
+                // nobody closed. A session opened weeks ago and abandoned keeps that
+                // status forever (nothing expires it server-side; the client only heals
+                // its OWNER's rows, and that owner has to open the app for it to happen),
+                // so it sat in this strip permanently as somebody warming up.
+                //
+                // The one exception is a session that ran past midnight: it still belongs
+                // here while its clock is running, which is why a recent ticked set also
+                // qualifies.
                 OR: [
-                    { status: "active" },
+                    { status: "active", date: { gte: startOfToday(), lt: endOfToday() } },
+                    { status: "active", lastSetAt: { gte: new Date(Date.now() - GYM_CLOCK_MAX_MS) } },
                     // Planned, but for TODAY. A session planned for next Tuesday is not
                     // somebody to cheer on now.
                     { status: "planned", date: { gte: startOfToday(), lt: endOfToday() } }
@@ -120,7 +136,7 @@ export class LiveService {
         const [workout, actor] = await Promise.all([
             this.prisma.workout.findUnique({
                 where: { id: workoutId },
-                select: { id: true, userId: true, status: true, date: true }
+                select: { id: true, userId: true, status: true, date: true, lastSetAt: true }
             }),
             // The recipient has to be able to see WHO is cheering, and a name alone is
             // weak at a glance — the face is what identifies a training partner.
@@ -136,7 +152,7 @@ export class LiveService {
         if (workout.userId === user.id) {
             throw new BadRequestException("Cannot cheer your own session");
         }
-        if (!isCheerable(workout.status, workout.date, new Date())) {
+        if (!isCheerable(workout.status, workout.date, new Date(), workout.lastSetAt)) {
             // Cheering is for someone who is training now or about to. A finished session
             // has the feed's own reactions for that, and one planned for next week is not
             // a person to encourage yet.
