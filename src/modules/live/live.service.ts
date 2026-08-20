@@ -3,7 +3,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { serializeWorkoutSummary } from "../../shared/serialize";
 import { RequestUser } from "../../shared/current-user.decorator";
 import { LiveBus } from "./live.bus";
-import { CHEER_EMOJI, allowCheer, isCheerable, presenceState, trimCheerHistory } from "./live.rules";
+import { CHEER_EMOJI, allowCheer, isCheerable, onePerPerson, presenceState, trimCheerHistory } from "./live.rules";
 
 /**
  * Who is training right now, and cheering them on.
@@ -95,7 +95,7 @@ export class LiveService {
             orderBy: { firstSetAt: "desc" }
         });
         return {
-            training: rows.map((row) => ({
+            training: onePerPerson(rows.map((row) => ({
                 workoutId: row.id,
                 userId: row.userId,
                 title: row.title,
@@ -104,7 +104,7 @@ export class LiveService {
                 firstSetAt: row.firstSetAt?.toISOString() || null,
                 displayName: row.user?.displayName || "",
                 avatarUrl: row.user?.avatarUrl || null
-            }))
+            })))
         };
     }
 

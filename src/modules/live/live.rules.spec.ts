@@ -108,3 +108,34 @@ describe("who can be cheered", () => {
         expect(isCheerable("completed", new Date("2026-08-20T00:00:00"), today)).toBe(false);
     });
 });
+
+import { onePerPerson } from "./live.rules";
+
+describe("one row per person in the strip", () => {
+    const row = (userId: string, state: string, firstSetAt: string | null = null) => ({ userId, state, firstSetAt });
+
+    it("keeps a single entry when someone has two qualifying sessions", () => {
+        // Two rows left active at once is possible - nothing on the server enforces a
+        // single open session - and the same face twice reads as a bug to anyone looking.
+        const kept = onePerPerson([row("u1", "warmup"), row("u1", "training", "2026-08-20T13:00:00Z")]);
+        expect(kept).toHaveLength(1);
+        expect(kept[0].state).toBe("training");
+    });
+
+    it("prefers the truthful state: a ticked set beats anything in the calendar", () => {
+        const kept = onePerPerson([row("u1", "planned"), row("u1", "warmup")]);
+        expect(kept[0].state).toBe("warmup");
+    });
+
+    it("breaks a tie on which session was started more recently", () => {
+        const kept = onePerPerson([
+            row("u1", "training", "2026-08-20T10:00:00Z"),
+            row("u1", "training", "2026-08-20T13:00:00Z")
+        ]);
+        expect(kept[0].firstSetAt).toBe("2026-08-20T13:00:00Z");
+    });
+
+    it("leaves different people alone", () => {
+        expect(onePerPerson([row("u1", "training"), row("u2", "planned")])).toHaveLength(2);
+    });
+});

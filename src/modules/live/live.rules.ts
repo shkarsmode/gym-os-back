@@ -87,3 +87,36 @@ function sameLocalDay(left: Date, right: Date): boolean {
         && left.getMonth() === right.getMonth()
         && left.getDate() === right.getDate();
 }
+
+/**
+ * One row per person for the presence strip.
+ *
+ * Somebody can legitimately have more than one qualifying session at once — a planned
+ * one for today plus a running one, or two rows left active because nothing on the server
+ * enforces a single open session. Rendering both puts the same face in the strip twice,
+ * which reads as a bug to anyone looking at it.
+ *
+ * The most advanced state wins, because that is the truthful one: if a set has been
+ * ticked, the person IS training, whatever else is sitting in their calendar.
+ */
+const STATE_RANK: Record<string, number> = { training: 3, warmup: 2, planned: 1 };
+
+export function onePerPerson<T extends { userId: string; state: string; firstSetAt?: string | null }>(rows: T[]): T[] {
+    const best = new Map<string, T>();
+    for (const row of rows) {
+        const held = best.get(row.userId);
+        if (!held || beats(row, held)) {
+            best.set(row.userId, row);
+        }
+    }
+    return [...best.values()];
+}
+
+function beats(candidate: { state: string; firstSetAt?: string | null }, held: { state: string; firstSetAt?: string | null }): boolean {
+    const rank = (STATE_RANK[candidate.state] || 0) - (STATE_RANK[held.state] || 0);
+    if (rank !== 0) {
+        return rank > 0;
+    }
+    // Same state: the one started more recently is the session they are actually in.
+    return String(candidate.firstSetAt || "") > String(held.firstSetAt || "");
+}
