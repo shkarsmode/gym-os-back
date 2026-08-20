@@ -20,7 +20,9 @@ export const NOTIFICATION_TYPES = {
     MENTION: "mention",
     ACHIEVEMENT: "achievement",
     TEAM: "team",
-    MODERATION: "moderation"
+    MODERATION: "moderation",
+    ACCESS_REQUEST: "access_request",
+    ACCESS_GRANTED: "access_granted"
 } as const;
 
 // Defaults for the per-user push switches: direct interactions with YOUR content are
@@ -33,5 +35,11 @@ export const PUSH_DEFAULTS: Record<string, boolean> = {
     mention: true,
     achievement: false,
     team: false,
-    moderation: true
+    moderation: true,
+    // Both are direct interactions with YOU that need an answer or report one you were
+    // waiting for — the same category as a comment on your post, not ambient activity.
+    // An access request sits unanswered until its owner sees it, and the requester is
+    // blocked from training with them meanwhile.
+    access_request: true,
+    access_granted: true
 };

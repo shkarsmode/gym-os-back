@@ -18,6 +18,7 @@ import { ImportExportModule } from "./modules/import-export/import-export.module
 import { FeedbackModule } from "./modules/feedback/feedback.module";
 import { FeedModule } from "./modules/feed/feed.module";
 import { LiveModule } from "./modules/live/live.module";
+import { AccessModule } from "./modules/access/access.module";
 import { AiModule } from "./modules/ai/ai.module";
 
 @Module({
@@ -38,7 +39,8 @@ import { AiModule } from "./modules/ai/ai.module";
         ImportExportModule,
         FeedbackModule,
         AiModule,
-        FeedModule
+        FeedModule,
+        AccessModule
     ],
     controllers: [HealthController],
     providers: [{ provide: APP_GUARD, useClass: ThrottleGuard }]

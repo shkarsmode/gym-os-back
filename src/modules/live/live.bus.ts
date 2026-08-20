@@ -25,7 +25,19 @@ import { Observable, Subject } from "rxjs";
 // what the whole gym sees — a session opened or closed, somebody's first set was ticked,
 // a workout appeared or vanished. It stays a hint, so listeners re-read through the
 // routes they are already allowed to read.
-export type LiveEventName = "workout.changed" | "workout.deleted" | "team.changed" | "cheer" | "hello" | "ping";
+export type LiveEventName =
+    | "workout.changed"
+    | "workout.deleted"
+    | "team.changed"
+    | "cheer"
+    // Somebody asked for access, or answered a request. The listener re-reads
+    // /access/state — the event carries no names or decisions of its own.
+    | "access.changed"
+    // Access this device HELD was withdrawn. Distinct from access.changed because it
+    // demands more than a refresh: the detail already in memory has to be dropped.
+    | "access.revoked"
+    | "hello"
+    | "ping";
 
 export interface LiveEvent {
     name: LiveEventName;

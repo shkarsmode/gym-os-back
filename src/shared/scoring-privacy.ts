@@ -54,24 +54,26 @@ interface ScoringUser {
     records?: unknown[];
     achievements?: unknown[];
     xpLedger?: unknown[];
-    xp?: number;
-    level?: number;
+    // The kernel's own type carries more than this and its exact shape is not this
+    // module's business — only which fields must go.
+    [key: string]: unknown;
 }
 
 export interface ScoringPayload {
     users: Record<string, ScoringUser>;
     team?: Record<string, unknown>;
+    [key: string]: unknown;
 }
 
 /**
  * @param canSeeDetail owner id -> may this caller see their detail
  * @param callerId     the caller, who always sees everything of their own
  */
-export function redactScoring(
-    payload: ScoringPayload,
+export function redactScoring<T extends ScoringPayload>(
+    payload: T,
     callerId: string,
     canSeeDetail: (ownerId: string) => boolean
-): ScoringPayload {
+): T {
     const users: Record<string, ScoringUser> = {};
     let anyHidden = false;
 

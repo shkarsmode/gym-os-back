@@ -8,6 +8,7 @@ import { duplicateKeys, normalizeExerciseCatalogPayload } from "./exercise-catal
 // near-identical serializers would drift and nobody would notice until a level moved.
 import { dateInput, numberValue, serializeWorkout, serializeWorkoutPrivate, serializeWorkoutSummary } from "../../shared/serialize";
 import { Visibility } from "../../shared/visibility";
+import { redactScoring } from "../../shared/scoring-privacy";
 import { WORKOUT_PAGE_ORDER, encodeCursor } from "../../shared/cursor";
 import { ScoringService } from "../scoring/scoring.service";
 
@@ -258,13 +259,12 @@ export class ImportExportService {
             // Прокачка tab); for everyone else the leaderboard needs nothing but the xp
             // total and the level. Measured on production this is 18.6 KB of the 45.6 KB
             // scoring block, almost all of it for people whose ledger nobody can open.
-            scoring = {
-                ...computed,
-                users: Object.fromEntries(Object.entries(computed.users).map(([id, entry]) => [
-                    id,
-                    id === user.id ? entry : { ...entry, xpLedger: [] }
-                ]))
-            };
+            // Strips peer XP ledgers (only your own is ever rendered, and it is 18.6 KB
+            // of a 45.6 KB block), then removes what a private member asked to hide —
+            // including rebuilding the TEAM totals from visible members only, because a
+            // total that still includes them can be un-summed to recover their volume
+            // exactly.
+            scoring = redactScoring(computed, user.id, (ownerId) => visibility.canSeeDetail(ownerId));
         }
 
         return {

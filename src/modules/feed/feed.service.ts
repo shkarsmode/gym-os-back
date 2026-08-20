@@ -241,7 +241,12 @@ export class FeedService {
                 where: {
                     unlockedAt: { not: null },
                     ...(before ? keysetWhere("unlockedAt", before, "achievement") : {}),
-                    ...(mineOnly ? { userId: user.id } : {})
+                    // An achievement TITLE encodes the threshold that earned it —
+                    // "Жим сотки", "100 тонн", "Мільйонер" — so announcing one to the
+                    // whole gym publishes a lower bound on the weight it took, which is
+                    // exactly what the owner asked to hide. Their badges stay on their
+                    // profile as part of their standing; the broadcast stops.
+                    ...(mineOnly ? { userId: user.id } : { userId: { notIn: hidden } })
                 },
                 orderBy: [{ unlockedAt: "desc" }, { id: "desc" }],
                 take: take + 1,
