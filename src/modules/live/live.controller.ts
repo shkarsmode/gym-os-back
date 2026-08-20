@@ -1,0 +1,64 @@
+import { Controller, MessageEvent, Req, Res, Sse, UseGuards } from "@nestjs/common";
+import type { Request, Response } from "express";
+import { Observable, interval, map, merge } from "rxjs";
+import { ApprovedGuard } from "../../shared/approved.guard";
+import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
+import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
+import { LiveBus, LiveEvent } from "./live.bus";
+
+// A comment frame often enough to beat any idle timeout between here and the phone, and
+// often enough that a connection dropped by a sleeping radio is noticed in seconds rather
+// than whenever the user next taps something.
+const HEARTBEAT_MS = 25_000;
+
+/**
+ * The live stream, as server-sent events rather than a WebSocket.
+ *
+ * That choice is about authorization, not about transport. This is an ordinary HTTP route,
+ * so it keeps JwtAuthGuard, ApprovedGuard, the throttle and the hand-rolled CORS
+ * middleware working exactly as they do everywhere else. A WebSocket upgrade carries none
+ * of that: `context.switchToHttp()` returns nothing useful, so all four would have to be
+ * reimplemented — and an upgrade request is exempt from CORS while still sending the
+ * SameSite=None session cookie, which is how a page on another origin would have opened an
+ * authenticated socket as the visitor.
+ */
+@Controller("live")
+@UseGuards(JwtAuthGuard, ApprovedGuard)
+export class LiveController {
+    constructor(private readonly bus: LiveBus) {}
+
+    @Sse("stream")
+    stream(
+        @CurrentUser() user: RequestUser,
+        @Req() request: Request,
+        @Res() response: Response
+    ): Observable<MessageEvent> {
+        // Proxies that buffer would defeat the entire point — a hint held for 30 seconds
+        // is worse than no hint, because the UI looks live and is not.
+        response.setHeader("Cache-Control", "no-cache, no-transform");
+        response.setHeader("X-Accel-Buffering", "no");
+        response.setHeader("Connection", "keep-alive");
+
+        const { events, close } = this.bus.open(user.id);
+        // The response closing is the ONLY reliable signal a device went away: a phone
+        // that loses signal never sends anything, it just stops being reachable. Without
+        // this the map keeps a dead subject per lost connection forever.
+        request.on("close", close);
+        response.on("close", close);
+
+        const hello: LiveEvent = { name: "hello", at: new Date().toISOString() };
+        const beats = interval(HEARTBEAT_MS).pipe(
+            map((): LiveEvent => ({ name: "ping", at: new Date().toISOString() }))
+        );
+
+        return merge(
+            // Sent immediately so the client can tell "connected" from "still connecting"
+            // without waiting for the first real event, which may be hours away.
+            new Observable<LiveEvent>((subscriber) => {
+                subscriber.next(hello);
+            }),
+            events,
+            beats
+        ).pipe(map((event): MessageEvent => ({ type: event.name, data: event })));
+    }
+}

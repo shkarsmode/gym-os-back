@@ -1,4 +1,5 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { LiveBus } from "../live/live.bus";
 import { WorkoutSetType, WorkoutStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { parseDateInput } from "../../shared/parse-date";
@@ -18,7 +19,31 @@ function parseOptionalDate(value?: string | null): Date | null {
 
 @Injectable()
 export class WorkoutsService {
-    constructor(private readonly prisma: PrismaService) {}
+    // LiveBus is @Optional so the service stays constructible as `new WorkoutsService(prisma)`
+    // in the unit tests, which have no Nest container. Every publish site is guarded.
+    constructor(
+        private readonly prisma: PrismaService,
+        @Optional() private readonly live?: LiveBus
+    ) {}
+
+    /**
+     * Tell this person's other devices that some of their workouts moved.
+     *
+     * Only ids and a version travel — never content. A listener answers by re-reading
+     * through the normal guarded route, so this can never widen what anyone may see, and
+     * a failure here can never corrupt anything: the write has already committed and the
+     * worst case is the old behaviour of finding out on the next refresh.
+     */
+    private announce(userId: string, name: "workout.changed" | "workout.deleted", ids: string[], version?: string | null) {
+        if (!this.live || !userId || !ids.length) {
+            return;
+        }
+        try {
+            this.live.publish(userId, { name, ids, version: version ?? null, at: new Date().toISOString() });
+        } catch (error) {
+            // Never let a notification failure surface as a failed save.
+        }
+    }
 
     /**
      * The caller's own history, one page at a time.
@@ -295,6 +320,9 @@ export class WorkoutsService {
         const written = results[results.length - 1] as { updatedAt?: Date } | undefined;
         const updatedAt = written?.updatedAt
             ?? (await this.prisma.workout.findUnique({ where: { id }, select: { updatedAt: true } }))?.updatedAt;
+        // The saved row plus anything this save closed as a side effect: a device showing
+        // the superseded session as still running has to hear about it too.
+        this.announce(ownerId, "workout.changed", [id, ...closedOtherIds], updatedAt?.toISOString() || null);
         return {
             ok: true,
             id,
@@ -328,8 +356,9 @@ export class WorkoutsService {
     }
 
     async remove(userId: string, id: string, isAdmin = false) {
-        await this.assertOwner(userId, id, isAdmin);
+        const owner = await this.assertOwner(userId, id, isAdmin);
         await this.prisma.workout.delete({ where: { id } });
+        this.announce(owner?.userId || userId, "workout.deleted", [id]);
         return { ok: true };
     }
 
@@ -346,11 +375,13 @@ export class WorkoutsService {
             where: { userId, status: "active", id: { not: id } },
             data: { status: "completed", finishedAt: new Date() }
         });
-        return this.prisma.workout.update({
+        const started = await this.prisma.workout.update({
             where: { id },
             data: { status: "active", startedAt: new Date(), finishedAt: null },
             include: this.includeWorkout()
         });
+        this.announce(userId, "workout.changed", [id, ...superseded.map((item) => item.id)], started.updatedAt?.toISOString());
+        return started;
     }
 
     async finish(userId: string, id: string) {
@@ -362,7 +393,9 @@ export class WorkoutsService {
                 data: { status: "completed", finishedAt: new Date() }
             })
         ]);
-        return this.prisma.workout.findUnique({ where: { id }, include: this.includeWorkout() });
+        const finished = await this.prisma.workout.findUnique({ where: { id }, include: this.includeWorkout() });
+        this.announce(userId, "workout.changed", [id], finished?.updatedAt?.toISOString());
+        return finished;
     }
 
     // Every set of a completed workout is a performed set — see the product rule in

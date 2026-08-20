@@ -17,12 +17,14 @@ import { ScoringModule } from "./modules/scoring/scoring.module";
 import { ImportExportModule } from "./modules/import-export/import-export.module";
 import { FeedbackModule } from "./modules/feedback/feedback.module";
 import { FeedModule } from "./modules/feed/feed.module";
+import { LiveModule } from "./modules/live/live.module";
 import { AiModule } from "./modules/ai/ai.module";
 
 @Module({
     imports: [
         ConfigModule.forRoot({ isGlobal: true }),
         PrismaModule,
+        LiveModule,
         AuthModule,
         UsersModule,
         ProfilesModule,
