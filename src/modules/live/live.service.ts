@@ -3,7 +3,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { serializeWorkoutSummary } from "../../shared/serialize";
 import { RequestUser } from "../../shared/current-user.decorator";
 import { LiveBus } from "./live.bus";
-import { CHEER_EMOJI, cheerCooldown } from "./live.rules";
+import { CHEER_EMOJI, allowCheer, isCheerable, presenceState, trimCheerHistory } from "./live.rules";
 
 /**
  * Who is training right now, and cheering them on.
@@ -23,12 +23,25 @@ const CHEER_TARGET = "cheer";
 // somebody else's sessions this client is supposed to be holding.
 const PEER_WINDOW_MS = 60 * 24 * 60 * 60 * 1000;
 
+function startOfToday(): Date {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function endOfToday(): Date {
+    const start = startOfToday();
+    return new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1);
+}
+
 @Injectable()
 export class LiveService {
     // Per (cheerer, workout) timestamp of the last delivered cheer. In memory and
     // per-process, which is the right lifetime: this throttles an animation, and a
     // restart losing it costs nothing.
-    private readonly lastCheer = new Map<string, number>();
+    // Per (cheerer, workout), when their recent cheers were sent. In memory and
+    // per-process, which is the right lifetime: this throttles an animation, and a
+    // restart losing it costs nothing.
+    private readonly cheerHistory = new Map<string, number[]>();
 
     constructor(
         private readonly prisma: PrismaService,
@@ -36,19 +49,29 @@ export class LiveService {
     ) {}
 
     /**
-     * Everyone with a session in progress.
+     * Everyone who is in the gym, or about to be.
      *
-     * `firstSetAt` travels because the client already knows how to render a running gym
-     * clock from it, so the presence strip can show how long someone has been at it
-     * rather than just that they are somewhere.
+     * Three states, because "training" alone left out the two moments when encouragement
+     * is worth the most — the person who has arrived but not lifted yet, and the person
+     * who put a session in the calendar for today and has not started it. Both are
+     * cheerable; only the first carries a clock, because the other two have not started
+     * one and a running timer next to them would be a lie.
      */
     async presence() {
         const rows = await this.prisma.workout.findMany({
-            where: { status: "active" },
+            where: {
+                OR: [
+                    { status: "active" },
+                    // Planned, but for TODAY. A session planned for next Tuesday is not
+                    // somebody to cheer on now.
+                    { status: "planned", date: { gte: startOfToday(), lt: endOfToday() } }
+                ]
+            },
             select: {
                 id: true,
                 userId: true,
                 title: true,
+                status: true,
                 workoutType: true,
                 firstSetAt: true,
                 user: { select: { id: true, displayName: true, avatarUrl: true } }
@@ -56,19 +79,16 @@ export class LiveService {
             orderBy: { firstSetAt: "desc" }
         });
         return {
-            training: rows
-                // A session that was started and never touched is not somebody in a gym;
-                // it is a plan someone opened. Only a ticked set proves presence.
-                .filter((row) => Boolean(row.firstSetAt))
-                .map((row) => ({
-                    workoutId: row.id,
-                    userId: row.userId,
-                    title: row.title,
-                    workoutType: row.workoutType,
-                    firstSetAt: row.firstSetAt?.toISOString() || null,
-                    displayName: row.user?.displayName || "",
-                    avatarUrl: row.user?.avatarUrl || null
-                }))
+            training: rows.map((row) => ({
+                workoutId: row.id,
+                userId: row.userId,
+                title: row.title,
+                workoutType: row.workoutType,
+                state: presenceState(row.status, row.firstSetAt),
+                firstSetAt: row.firstSetAt?.toISOString() || null,
+                displayName: row.user?.displayName || "",
+                avatarUrl: row.user?.avatarUrl || null
+            }))
         };
     }
 
@@ -100,7 +120,7 @@ export class LiveService {
         const [workout, actor] = await Promise.all([
             this.prisma.workout.findUnique({
                 where: { id: workoutId },
-                select: { id: true, userId: true, status: true }
+                select: { id: true, userId: true, status: true, date: true }
             }),
             // The recipient has to be able to see WHO is cheering, and a name alone is
             // weak at a glance — the face is what identifies a training partner.
@@ -116,18 +136,18 @@ export class LiveService {
         if (workout.userId === user.id) {
             throw new BadRequestException("Cannot cheer your own session");
         }
-        if (workout.status !== "active") {
-            // Cheering is for someone who is training NOW. A finished session has the
-            // feed's own reactions for that.
+        if (!isCheerable(workout.status, workout.date, new Date())) {
+            // Cheering is for someone who is training now or about to. A finished session
+            // has the feed's own reactions for that, and one planned for next week is not
+            // a person to encourage yet.
             throw new BadRequestException("Session is not running");
         }
 
         const key = `${user.id}:${workoutId}`;
         const now = Date.now();
-        const deliver = cheerCooldown(this.lastCheer.get(key), now);
-        if (deliver) {
-            this.lastCheer.set(key, now);
-        }
+        const history = this.cheerHistory.get(key) || [];
+        const deliver = allowCheer(history, now);
+        this.cheerHistory.set(key, deliver ? [...trimCheerHistory(history, now), now] : trimCheerHistory(history, now));
 
         // Persisted so a cheer that lands while the phone is face-down in a gym bag is
         // still there when its owner next looks — the live event alone would be gone.
