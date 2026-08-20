@@ -5,6 +5,12 @@
         "removeComments": true,
         "emitDecoratorMetadata": true,
         "experimentalDecorators": true,
+        // esModuleInterop, not just allowSyntheticDefaultImports: the latter only silences
+        // the type error for `import express from "express"` while tsc still emits a bare
+        // `express_1.default`, which is undefined for a CommonJS module. `npm run build &&
+        // npm start` therefore crashed on express.json() — it only ever worked on Vercel,
+        // whose esbuild bundler adds the interop wrapper itself.
+        "esModuleInterop": true,
         "allowSyntheticDefaultImports": true,
         "target": "ES2021",
         "sourceMap": true,
