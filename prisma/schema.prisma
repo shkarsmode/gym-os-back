@@ -34,6 +34,11 @@ model User {
   approved          Boolean               @default(false)
   role              String                @default("free")
   preferences       Json?
+  // Workout privacy. Opt-in: a profile is public unless its owner says otherwise, so
+  // shipping this must not hide anybody retroactively. privacyChoiceAt records that the
+  // person has been ASKED — a null means the one-time prompt still has to be shown.
+  hideWorkoutDetails Boolean              @default(false)
+  privacyChoiceAt    DateTime?
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
   oauthAccounts     OAuthAccount[]
@@ -50,6 +55,8 @@ model User {
   feedComments      FeedComment[]
   notifications     Notification[]
   pushSubscriptions PushSubscription[]
+  accessGrantsOwned   WorkoutAccessGrant[] @relation("AccessOwner")
+  accessGrantsHeld    WorkoutAccessGrant[] @relation("AccessViewer")
 }
 
 model OAuthAccount {
@@ -461,4 +468,31 @@ model PushSubscription {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+/// Who may see a private member's workout detail. One row per (owner, viewer).
+///
+/// `status` holds exactly three values and the read path compares against "accepted" and
+/// nothing else. A BLOCK is a rejection carrying an absurdly distant cooldown rather than
+/// a fourth status, so no future query can forget to handle it.
+///
+/// Rows are never deleted on cancel or unsubscribe. The row also carries the cooldown and
+/// the rejection count, so deleting it would let one extra tap reset both.
+model WorkoutAccessGrant {
+  id            String    @id @default(cuid())
+  ownerId       String
+  viewerId      String
+  status        String    @default("pending")
+  message       String?
+  rejectedCount Int       @default(0)
+  cooldownUntil DateTime?
+  decidedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  owner         User      @relation("AccessOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  viewer        User      @relation("AccessViewer", fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, viewerId])
+  @@index([viewerId, status])
+  @@index([ownerId, status])
 }

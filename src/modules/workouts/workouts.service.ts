@@ -7,6 +7,7 @@ import { assertWorkoutQuota as enforceWorkoutQuota } from "../../shared/workout-
 import { QuotaTier } from "../../shared/admin";
 import { WORKOUT_PAGE_ORDER, cursorFilter, decodeCursor, encodeCursor } from "../../shared/cursor";
 import { serializeWorkout } from "../../shared/serialize";
+import { Visibility } from "../../shared/visibility";
 import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 
 function parseOptionalDate(value?: string | null): Date | null {
@@ -46,15 +47,15 @@ export class WorkoutsService {
         // minute for the whole length of a session — and telling the entire gym to
         // re-read on each of those turns one person training into a steady broadcast to
         // every connected device that changes nothing on any of their screens.
-        peerVisible = false
+        touches: { presence?: boolean; feed?: boolean; peers?: boolean } | null = null
     ) {
         if (!this.live || !userId || !ids.length) {
             return;
         }
         try {
             this.live.publish(userId, { name, ids, version: version ?? null, at: new Date().toISOString() });
-            if (peerVisible) {
-                this.live.broadcast({ name: "team.changed", ids, at: new Date().toISOString() });
+            if (touches && (touches.presence || touches.feed || touches.peers)) {
+                this.live.broadcast({ name: "team.changed", ids, touches, at: new Date().toISOString() });
             }
         } catch (error) {
             // Never let a notification failure surface as a failed save.
@@ -97,16 +98,37 @@ export class WorkoutsService {
     // team feed and calendar, so the sets behind them are not new information. A peer's
     // planned or in-progress workout stays private; 404 rather than 403 so the response
     // does not confirm the id exists.
-    async findOne(id: string, callerId: string, isAdmin = false) {
+    async findOne(id: string, callerId: string, isAdmin = false, visibility?: Visibility) {
+        // Ownership is settled from a scalar read BEFORE the sets are fetched. Loading
+        // the tree and then deciding not to send it would mean a private member's every
+        // repetition had already left the database — the requirement is that it never
+        // does, not that it is stripped on the way out.
+        const owner = await this.prisma.workout.findUnique({
+            where: { id },
+            select: { userId: true, status: true }
+        });
+        if (!owner) {
+            throw new NotFoundException("Workout not found");
+        }
+        const isOwner = owner.userId === callerId;
+        if (!isOwner && !isAdmin && owner.status !== "completed") {
+            throw new NotFoundException("Workout not found");
+        }
+        if (!isOwner && visibility && !visibility.canSeeDetail(owner.userId)) {
+            // 403 with a code, not the 404 used above: the caller is meant to see that
+            // this session exists and to be offered the chance to ask for access. Hiding
+            // its existence would make the request button impossible to explain.
+            throw new ForbiddenException({
+                code: "WORKOUT_PRIVATE",
+                ownerId: owner.userId,
+                message: "This member keeps their workout details private."
+            });
+        }
         const workout = await this.prisma.workout.findUnique({
             where: { id },
             include: this.includeWorkout()
         });
         if (!workout) {
-            throw new NotFoundException("Workout not found");
-        }
-        const isOwner = workout.userId === callerId;
-        if (!isOwner && !isAdmin && workout.status !== "completed") {
             throw new NotFoundException("Workout not found");
         }
         // Serialize like every other workout-returning route. Raw Prisma sends weight and
@@ -120,7 +142,7 @@ export class WorkoutsService {
         const date = parseDateInput(dto.date);
         await enforceWorkoutQuota(this.prisma, userId, date, tier);
         const now = new Date();
-        return this.prisma.workout.create({
+        const created = await this.prisma.workout.create({
             data: {
                 userId,
                 date,
@@ -133,6 +155,14 @@ export class WorkoutsService {
             },
             include: this.includeWorkout()
         });
+        // This announced nothing at all until now, so a session planned from the calendar
+        // on one device simply never appeared on another until a reload.
+        this.announce(userId, "workout.changed", [created.id], created.updatedAt?.toISOString(), {
+            presence: created.status === "active",
+            peers: true,
+            feed: created.status === "completed"
+        });
+        return created;
     }
 
     // Atomic full upsert of a single workout (scalars + nested exercises/sets/cardio).
@@ -340,14 +370,23 @@ export class WorkoutsService {
             ?? (await this.prisma.workout.findUnique({ where: { id }, select: { updatedAt: true } }))?.updatedAt;
         // The saved row plus anything this save closed as a side effect: a device showing
         // the superseded session as still running has to hear about it too.
-        // A brand-new row, a status change, or the first ticked set are the three things
-        // that alter what everyone else sees — the feed, the calendar and the "training
-        // now" strip. Everything else is this person adjusting their own numbers.
-        const peerVisible = !existing
-            || existing.status !== dto.status
-            || Boolean(existing.firstSetAt) !== Boolean(dto.firstSetAt)
-            || closedOtherIds.length > 0;
-        this.announce(ownerId, "workout.changed", [id, ...closedOtherIds], updatedAt?.toISOString() || null, peerVisible);
+        // Presence and the feed move for DIFFERENT reasons, and saying which lets every
+        // listener refresh only what actually changed. Somebody ticking their first set
+        // changes who is shown as training; it does not put anything in the feed, which
+        // contains finished sessions only.
+        const isNew = !existing;
+        const statusChanged = isNew || existing.status !== dto.status;
+        const startedLifting = Boolean(existing?.firstSetAt) !== Boolean(dto.firstSetAt);
+        const touches = {
+            presence: statusChanged || startedLifting || closedOtherIds.length > 0,
+            // The feed holds finished sessions only.
+            feed: (statusChanged && dto.status === "completed") || closedOtherIds.length > 0,
+            // The calendar and day sheet show PLANNED and ACTIVE rows too, so a session
+            // appearing or changing state belongs to them even when the feed will never
+            // mention it.
+            peers: isNew || statusChanged || closedOtherIds.length > 0
+        };
+        this.announce(ownerId, "workout.changed", [id, ...closedOtherIds], updatedAt?.toISOString() || null, touches);
         return {
             ok: true,
             id,
@@ -383,7 +422,7 @@ export class WorkoutsService {
     async remove(userId: string, id: string, isAdmin = false) {
         const owner = await this.assertOwner(userId, id, isAdmin);
         await this.prisma.workout.delete({ where: { id } });
-        this.announce(owner?.userId || userId, "workout.deleted", [id], null, true);
+        this.announce(owner?.userId || userId, "workout.deleted", [id], null, { presence: true, peers: true, feed: true });
         return { ok: true };
     }
 
@@ -405,7 +444,8 @@ export class WorkoutsService {
             data: { status: "active", startedAt: new Date(), finishedAt: null },
             include: this.includeWorkout()
         });
-        this.announce(userId, "workout.changed", [id, ...superseded.map((item) => item.id)], started.updatedAt?.toISOString(), true);
+        // Starting closes any other running session, and a closed session IS a feed entry.
+        this.announce(userId, "workout.changed", [id, ...superseded.map((item) => item.id)], started.updatedAt?.toISOString(), { presence: true, peers: true, feed: superseded.length > 0 });
         return started;
     }
 
@@ -419,7 +459,7 @@ export class WorkoutsService {
             })
         ]);
         const finished = await this.prisma.workout.findUnique({ where: { id }, include: this.includeWorkout() });
-        this.announce(userId, "workout.changed", [id], finished?.updatedAt?.toISOString(), true);
+        this.announce(userId, "workout.changed", [id], finished?.updatedAt?.toISOString(), { presence: true, peers: true, feed: true });
         return finished;
     }
 

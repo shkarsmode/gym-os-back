@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
+import { Visibility } from "../../shared/visibility";
 import { isAdminUser } from "../../shared/admin";
 import { PushService } from "./push.service";
 import {
@@ -22,8 +23,7 @@ import {
     keysetWhere,
     mergeFeedRows,
     timelineAt,
-    workoutFeedPayload
-} from "./feed.timeline";
+    workoutFeedPayload, privateWorkoutFeedPayload } from "./feed.timeline";
 
 interface RecordSyncItem {
     exerciseId: string;
@@ -136,6 +136,10 @@ export class FeedService {
     // neither duplicate nor skip an item even though the sources are queried apart.
     async feed(user: RequestUser, scope: string, cursor: string | undefined, limit?: number) {
         await this.ensureTables();
+        // Decides which rows are FETCHED, not which fields survive. A private member's
+        // sets must not be selected out of Postgres at all.
+        const visibility = await Visibility.resolve(this.prisma, user);
+        const hidden = visibility.hiddenOwnerIds();
         const take = Math.min(Math.max(Number(limit) || FEED_PAGE_SIZE, 1), FEED_MAX_PAGE_SIZE);
         const before = decodeFeedCursor(cursor);
         const mineOnly = scope === "mine";
@@ -154,7 +158,7 @@ export class FeedService {
             const timings = await this.workoutTimeline(user.id, mineOnly, before, take + 1);
             const workouts = timings.length
                 ? await this.prisma.workout.findMany({
-                    where: { id: { in: timings.map((item) => item.id) } },
+                    where: { id: { in: timings.map((item) => item.id) }, userId: { notIn: hidden } },
                     include: {
                         // Ordered like the detail view: the preview takes the first four,
                         // and unordered rows made the card advertise a different subset
@@ -164,26 +168,51 @@ export class FeedService {
                     }
                 })
                 : [];
+            // A private author's session still gets a card — the FACT that they trained
+            // is public by design — but it is built from scalars only, so nothing behind
+            // it is ever read.
+            const privateWorkouts = (hidden.length && timings.length)
+                ? await this.prisma.workout.findMany({
+                    where: { id: { in: timings.map((item) => item.id) }, userId: { in: hidden } },
+                    select: {
+                        id: true, userId: true, date: true, workoutType: true,
+                        durationOverride: true, startedAt: true, finishedAt: true
+                    }
+                })
+                : [];
             const byId = new Map(workouts.map((item) => [item.id, item]));
+            const privateById = new Map(privateWorkouts.map((item) => [item.id, item]));
             for (const timing of timings) {
                 const workout = byId.get(timing.id);
-                if (!workout) {
+                if (workout) {
+                    rows.push({
+                        id: workout.id,
+                        type: "workout",
+                        userId: workout.userId,
+                        createdAt: timing.feedAt,
+                        payload: workoutFeedPayload(workout)
+                    });
                     continue;
                 }
-                rows.push({
-                    id: workout.id,
-                    type: "workout",
-                    userId: workout.userId,
-                    createdAt: timing.feedAt,
-                    payload: workoutFeedPayload(workout)
-                });
+                const locked = privateById.get(timing.id);
+                if (locked) {
+                    rows.push({
+                        id: locked.id,
+                        type: "workout",
+                        userId: locked.userId,
+                        createdAt: timing.feedAt,
+                        payload: privateWorkoutFeedPayload(locked)
+                    });
+                }
             }
         }
 
         if (scope === "team" || scope === "records" || mineOnly) {
             const records = await this.prisma.personalRecord.findMany({
                 where: {
-                    ...(mineOnly ? { userId: user.id } : {}),
+                    // Personal records are explicitly on the hidden list, and a record
+                    // card IS the weight — there is no reduced version worth showing.
+                    ...(mineOnly ? { userId: user.id } : { userId: { notIn: hidden } }),
                     ...(before ? keysetWhere("recordedAt", before, "record") : {})
                 },
                 orderBy: [{ recordedAt: "desc" }, { id: "desc" }],

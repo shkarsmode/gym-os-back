@@ -6,7 +6,8 @@ import { isAdminUser, isSuperAdminUser } from "../../shared/admin";
 import { duplicateKeys, normalizeExerciseCatalogPayload } from "./exercise-catalog-importer";
 // Shared with /scoring so both feed the scoring kernel identical data — two
 // near-identical serializers would drift and nobody would notice until a level moved.
-import { dateInput, numberValue, serializeWorkout, serializeWorkoutSummary } from "../../shared/serialize";
+import { dateInput, numberValue, serializeWorkout, serializeWorkoutPrivate, serializeWorkoutSummary } from "../../shared/serialize";
+import { Visibility } from "../../shared/visibility";
 import { WORKOUT_PAGE_ORDER, encodeCursor } from "../../shared/cursor";
 import { ScoringService } from "../scoring/scoring.service";
 
@@ -51,8 +52,54 @@ export class ImportExportService {
         return `W/"cat-${count}-${catalogStamp}-${reactionStamp}-${userId}"`;
     }
 
+    /**
+     * Everyone else's recent sessions, in the right shape for who is allowed to see what.
+     *
+     * TWO queries rather than one filtered afterwards. That is the whole point: for a
+     * member who keeps their details private, the second query selects scalar columns
+     * only, so their sets are never read out of Postgres at all. Filtering a single
+     * fetched result would satisfy the letter of "the client does not receive it" while
+     * still pulling every repetition into the process, one refactor away from shipping.
+     */
+    private async peerRows(callerId: string, since: Date, hiddenOwners: string[]) {
+        const [open, closed] = await Promise.all([
+            this.prisma.workout.findMany({
+                where: { userId: { not: callerId, notIn: hiddenOwners }, date: { gte: since } },
+                include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true },
+                orderBy: WORKOUT_PAGE_ORDER
+            }),
+            hiddenOwners.length
+                ? this.prisma.workout.findMany({
+                    where: { userId: { in: hiddenOwners }, date: { gte: since } },
+                    // Scalars only. No `include`, so no join to WorkoutExercise or
+                    // WorkoutSet is issued.
+                    select: {
+                        id: true,
+                        userId: true,
+                        date: true,
+                        status: true,
+                        workoutType: true,
+                        durationOverride: true,
+                        startedAt: true,
+                        finishedAt: true,
+                        updatedAt: true
+                    },
+                    orderBy: WORKOUT_PAGE_ORDER
+                })
+                : Promise.resolve([])
+        ]);
+        return [
+            ...open.map(serializeWorkoutSummary),
+            ...closed.map(serializeWorkoutPrivate)
+        ];
+    }
+
     async export(user: RequestUser, options: { windowed?: boolean; ownLimit?: number; ifNoneMatch?: string } = {}) {
         const requesterIsAdmin = isAdminUser(user);
+        // Resolved before any peer query is built, because it decides WHICH ROWS ARE
+        // FETCHED, not which fields survive serialization.
+        const visibility = await Visibility.resolve(this.prisma, user);
+        const hiddenOwners = visibility.hiddenOwnerIds();
         const windowed = options.windowed === true;
         // 30 covers the history list, the recent-workouts strips and several weeks of
         // scrollback without a second request for the overwhelmingly common session.
@@ -146,7 +193,9 @@ export class ImportExportService {
         // Fetched only for the windowed shape so the legacy path costs exactly what it
         // did before and cannot regress.
         let ownWorkouts = workouts;
-        let peerSummaries: ReturnType<typeof serializeWorkoutSummary>[] = [];
+        // Two shapes, deliberately: a summary for a peer whose detail this caller may
+        // see, and the reduced private row for one whose detail they may not.
+        let peerSummaries: Array<ReturnType<typeof serializeWorkoutSummary> | ReturnType<typeof serializeWorkoutPrivate>> = [];
         let workoutsCursor: string | null = null;
         let scoring: Awaited<ReturnType<ScoringService["scoreEveryone"]>> | null = null;
         let ownSeq = new Map<string, number>();
@@ -156,12 +205,7 @@ export class ImportExportService {
             // old enough to omit the parameter expects its full history — but peers come
             // back as summaries exactly as they do in the windowed shape, so no set of
             // anyone else's ever leaves the process.
-            const peers = await this.prisma.workout.findMany({
-                where: { userId: { not: user.id }, date: { gte: peerWindowStart } },
-                include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true },
-                orderBy: WORKOUT_PAGE_ORDER
-            });
-            peerSummaries = peers.map(serializeWorkoutSummary);
+            peerSummaries = await this.peerRows(user.id, peerWindowStart, hiddenOwners);
         }
 
         if (windowed) {
@@ -185,17 +229,14 @@ export class ImportExportService {
                     include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true }
                 }),
                 // Peers as summaries: enough for the calendar, day sheet and activity
-                // feed, without a single set crossing the wire.
-                this.prisma.workout.findMany({
-                    where: { userId: { not: user.id }, date: { gte: peerWindowStart } },
-                    include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true },
-                    orderBy: WORKOUT_PAGE_ORDER
-                }),
+                // feed, without a single set crossing the wire — and for a member who
+                // keeps their details private, without one leaving the database either.
+                this.peerRows(user.id, peerWindowStart, hiddenOwners),
                 this.scoring.scoreEveryone()
             ]);
 
             ownWorkouts = [...activeOutsideWindow, ...ownWorkouts];
-            peerSummaries = peers.map(serializeWorkoutSummary);
+            peerSummaries = peers;
 
             // Lifetime ordinal per workout, assigned by the database.
             //

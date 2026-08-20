@@ -39,6 +39,17 @@ export interface LiveEvent {
      * be a round-trip for nothing. Everything else stays a hint.
      */
     cheer?: { emoji: string; workoutId: string; actor: { id: string; displayName: string; avatarUrl: string | null } };
+    /**
+     * WHICH shared surfaces a team event touches.
+     *
+     * Three surfaces, three different reasons to move, and conflating them means every
+     * listener refreshes everything:
+     *   presence — who is shown as training right now
+     *   feed     — FINISHED sessions only, so a warm-up never belongs here
+     *   peers    — the calendar and day sheet, which show planned and active rows too,
+     *              and therefore move for changes the feed does not care about
+     */
+    touches?: { presence?: boolean; feed?: boolean; peers?: boolean };
     at: string;
 }
 

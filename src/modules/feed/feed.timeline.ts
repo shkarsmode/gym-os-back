@@ -162,3 +162,38 @@ export function workoutFeedPayload(workout: WorkoutLike): Record<string, unknown
 function roundKg(value: number): number {
     return Math.round(value * 10) / 10;
 }
+
+interface PrivateWorkoutLike {
+    date: Date;
+    workoutType: string;
+    durationOverride: number | null;
+    startedAt: Date | null;
+    finishedAt: Date | null;
+}
+
+/**
+ * The card for a session whose owner keeps their details private.
+ *
+ * It still appears — that a member trained is public by product decision, and removing
+ * them from the feed entirely is not what "hide my workout details" asks for. What it
+ * carries is the fact and nothing behind it.
+ *
+ * Note what is ABSENT rather than zero: `setCount`, `volumeKg`, `exerciseCount` and the
+ * `exercises` preview are not here at all. Zeroing them would render as a real session in
+ * which somebody lifted nothing — a false statement, and one indistinguishable from a
+ * bug. `private: true` is what tells the card to draw a lock instead.
+ *
+ * `title` is dropped as well: it is free text and the likeliest place for the very number
+ * being hidden to appear anyway. The type already says what kind of session it was.
+ */
+export function privateWorkoutFeedPayload(workout: PrivateWorkoutLike): Record<string, unknown> {
+    return {
+        private: true,
+        workoutType: workout.workoutType,
+        date: workout.date,
+        durationMinutes: workout.durationOverride
+            ?? (workout.startedAt && workout.finishedAt
+                ? Math.round((workout.finishedAt.getTime() - workout.startedAt.getTime()) / 60000)
+                : null)
+    };
+}

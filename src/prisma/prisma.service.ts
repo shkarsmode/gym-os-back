@@ -111,6 +111,51 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 'ALTER TABLE "Workout" ADD COLUMN IF NOT EXISTS "lastSetAt" TIMESTAMP(3);'
             );
 
+            // Workout privacy. `hideWorkoutDetails` false for everyone who existed before
+            // this shipped — the product decision is that a profile is PUBLIC by default
+            // and privacy is opt-in, so the deploy must not silently hide anybody's data.
+            // `privacyChoiceAt` records that the person has been ASKED, which is what
+            // stops the one-time prompt reappearing on every app open.
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "hideWorkoutDetails" BOOLEAN NOT NULL DEFAULT false;'
+            );
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "privacyChoiceAt" TIMESTAMP(3);'
+            );
+
+            // Who may see a private member's detail. One row per (owner, viewer).
+            //
+            // `status` is exactly three values and the read path compares against
+            // 'accepted' and nothing else — a block is a rejection with an absurdly
+            // distant cooldown rather than a fourth status, so no future query can forget
+            // to handle it. Rows are never deleted on cancel or unsubscribe: the row also
+            // carries the cooldown and the rejection count, and deleting it would let one
+            // extra tap reset both.
+            await this.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "WorkoutAccessGrant" (
+                "id" TEXT NOT NULL,
+                "ownerId" TEXT NOT NULL,
+                "viewerId" TEXT NOT NULL,
+                "status" TEXT NOT NULL DEFAULT 'pending',
+                "message" TEXT,
+                "rejectedCount" INTEGER NOT NULL DEFAULT 0,
+                "cooldownUntil" TIMESTAMP(3),
+                "decidedAt" TIMESTAMP(3),
+                "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT "WorkoutAccessGrant_pkey" PRIMARY KEY ("id"),
+                CONSTRAINT "WorkoutAccessGrant_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT "WorkoutAccessGrant_viewerId_fkey" FOREIGN KEY ("viewerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+            )`);
+            await this.$executeRawUnsafe(
+                'CREATE UNIQUE INDEX IF NOT EXISTS "WorkoutAccessGrant_ownerId_viewerId_key" ON "WorkoutAccessGrant"("ownerId","viewerId");'
+            );
+            await this.$executeRawUnsafe(
+                'CREATE INDEX IF NOT EXISTS "WorkoutAccessGrant_viewerId_status_idx" ON "WorkoutAccessGrant"("viewerId","status");'
+            );
+            await this.$executeRawUnsafe(
+                'CREATE INDEX IF NOT EXISTS "WorkoutAccessGrant_ownerId_status_idx" ON "WorkoutAccessGrant"("ownerId","status");'
+            );
+
             // Year of birth, collected in the AI-coach onboarding. NULL for everyone who
             // has not filled it in — the coach simply omits age from its reasoning.
             await this.$executeRawUnsafe(

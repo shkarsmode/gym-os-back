@@ -5,13 +5,18 @@ import { ApprovedGuard } from "../../shared/approved.guard";
 import { isAdminUser, tierOf } from "../../shared/admin";
 import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 import { WorkoutsService } from "./workouts.service";
+import { PrismaService } from "../../prisma/prisma.service";
+import { Visibility } from "../../shared/visibility";
 
 // API uses GET + POST only (no PUT/PATCH/DELETE): some networks/proxies and the
 // browser preflight behaved badly on the other verbs, so every mutation is a POST.
 @Controller("workouts")
 @UseGuards(JwtAuthGuard, ApprovedGuard)
 export class WorkoutsController {
-    constructor(private readonly workoutsService: WorkoutsService) {}
+    constructor(
+        private readonly workoutsService: WorkoutsService,
+        private readonly prisma: PrismaService
+    ) {}
 
     // NOTE: `GET /workouts` (findAll) was removed. It took `userId` straight from the
     // query string with no ownership check, so any approved member could read anyone's
@@ -30,8 +35,12 @@ export class WorkoutsController {
     }
 
     @Get(":id")
-    findOne(@CurrentUser() user: RequestUser, @Param("id") id: string) {
-        return this.workoutsService.findOne(id, user.id, isAdminUser(user));
+    async findOne(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+        // Resolved here rather than inside the service so the service keeps taking it as
+        // an argument — which makes every own-scoped path prove it is own-scoped instead
+        // of quietly inheriting a permissive default.
+        const visibility = await Visibility.resolve(this.prisma, user);
+        return this.workoutsService.findOne(id, user.id, isAdminUser(user), visibility);
     }
 
     @Post()

@@ -139,6 +139,41 @@ export function serializeWorkoutSummary(item: WorkoutRow) {
     };
 }
 
+/**
+ * A private member's session, reduced to the FACT that it happened.
+ *
+ * Present: the date, the type, how long it took, and the row's identity. Absent, and
+ * absent from the DATABASE READ as well as from this object: every exercise, set,
+ * repetition, weight and note, and everything summed from them — volume, set count,
+ * exercise count, cardio minutes.
+ *
+ * Two fields are dropped that a reader might expect to survive:
+ *   - `title` is free text and is the single most likely place for the number being
+ *     hidden to appear anyway ("Жим 100"). The type already says what kind of session
+ *     it was.
+ *   - the aggregates are OMITTED, not zeroed. A zero is a claim that someone lifted
+ *     nothing, which is both false and indistinguishable from a bug.
+ *
+ * `private: true` is load-bearing. Every shape-agnostic accessor in the client falls
+ * back to 0 for a missing aggregate, so without an explicit marker a hidden session
+ * renders as a real session with nothing in it rather than as a locked one.
+ */
+export function serializeWorkoutPrivate(item: Pick<WorkoutRow, "id" | "userId" | "date" | "status" | "workoutType" | "durationOverride" | "startedAt" | "finishedAt"> & { updatedAt?: Date | null }) {
+    return {
+        id: item.id,
+        userId: item.userId,
+        private: true as const,
+        updatedAt: item.updatedAt?.toISOString() || null,
+        date: dateInput(item.date),
+        status: item.status,
+        workoutType: item.workoutType,
+        durationMinutes: item.durationOverride
+            ?? (item.startedAt && item.finishedAt
+                ? Math.round((item.finishedAt.getTime() - item.startedAt.getTime()) / 60000)
+                : null)
+    };
+}
+
 export function serializeWorkout(item: WorkoutRow) {
     return {
         hydrated: true as const,
