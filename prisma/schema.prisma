@@ -57,6 +57,8 @@ model User {
   pushSubscriptions PushSubscription[]
   accessGrantsOwned   WorkoutAccessGrant[] @relation("AccessOwner")
   accessGrantsHeld    WorkoutAccessGrant[] @relation("AccessViewer")
+  partnershipsHosted  TrainingPartnership[] @relation("PartnerHost")
+  partnershipsJoined  TrainingPartnership[] @relation("PartnerGuest")
 }
 
 model OAuthAccount {
@@ -495,4 +497,24 @@ model WorkoutAccessGrant {
   @@unique([ownerId, viewerId])
   @@index([viewerId, status])
   @@index([ownerId, status])
+}
+
+/// Two people training together, watching each other's sets in real time.
+///
+/// A PAIR by design. Shaping the table for exactly two makes "who else is in this
+/// session" a question that cannot be asked, rather than one answered wrongly later.
+model TrainingPartnership {
+  id        String    @id @default(cuid())
+  hostId    String
+  guestId   String
+  status    String    @default("pending")
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  host      User      @relation("PartnerHost", fields: [hostId], references: [id], onDelete: Cascade)
+  guest     User      @relation("PartnerGuest", fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@index([hostId, status])
+  @@index([guestId, status])
 }

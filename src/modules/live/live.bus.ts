@@ -36,6 +36,10 @@ export type LiveEventName =
     // Access this device HELD was withdrawn. Distinct from access.changed because it
     // demands more than a refresh: the detail already in memory has to be dropped.
     | "access.revoked"
+    // An invitation to train together was sent, answered or ended.
+    | "partner.changed"
+    // The person you are training with moved their session — go and re-read it.
+    | "partner.workout"
     | "hello"
     | "ping";
 

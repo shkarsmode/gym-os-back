@@ -156,6 +156,32 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 'CREATE INDEX IF NOT EXISTS "WorkoutAccessGrant_ownerId_status_idx" ON "WorkoutAccessGrant"("ownerId","status");'
             );
 
+            // Two people training together and watching each other's sets live.
+            //
+            // A PAIR, not a group: the product decision is two, and a table shaped for
+            // exactly two makes "who else is in this" un-askable rather than answered
+            // wrongly later. One row per invitation; `status` is pending until answered
+            // and `active` only while both are training.
+            await this.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "TrainingPartnership" (
+                "id" TEXT NOT NULL,
+                "hostId" TEXT NOT NULL,
+                "guestId" TEXT NOT NULL,
+                "status" TEXT NOT NULL DEFAULT 'pending',
+                "startedAt" TIMESTAMP(3),
+                "endedAt" TIMESTAMP(3),
+                "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT "TrainingPartnership_pkey" PRIMARY KEY ("id"),
+                CONSTRAINT "TrainingPartnership_hostId_fkey" FOREIGN KEY ("hostId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT "TrainingPartnership_guestId_fkey" FOREIGN KEY ("guestId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+            )`);
+            await this.$executeRawUnsafe(
+                'CREATE INDEX IF NOT EXISTS "TrainingPartnership_hostId_status_idx" ON "TrainingPartnership"("hostId","status");'
+            );
+            await this.$executeRawUnsafe(
+                'CREATE INDEX IF NOT EXISTS "TrainingPartnership_guestId_status_idx" ON "TrainingPartnership"("guestId","status");'
+            );
+
             // Year of birth, collected in the AI-coach onboarding. NULL for everyone who
             // has not filled it in — the coach simply omits age from its reasoning.
             await this.$executeRawUnsafe(

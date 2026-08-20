@@ -6,8 +6,10 @@ import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { LiveBus, LiveEvent } from "./live.bus";
 import { LiveService } from "./live.service";
+import { PartnerService } from "./partner.service";
 import { CHEER_EMOJI } from "./live.rules";
 import { CheerDto } from "./dto/cheer.dto";
+import { InvitePartnerDto } from "./dto/partner.dto";
 
 // A comment frame often enough to beat any idle timeout between here and the phone, and
 // often enough that a connection dropped by a sleeping radio is noticed in seconds rather
@@ -30,8 +32,29 @@ const HEARTBEAT_MS = 25_000;
 export class LiveController {
     constructor(
         private readonly bus: LiveBus,
-        private readonly live: LiveService
+        private readonly live: LiveService,
+        private readonly partner: PartnerService
     ) {}
+
+    @Get("partner")
+    partnerState(@CurrentUser() user: RequestUser) {
+        return this.partner.current(user);
+    }
+
+    @Post("partner/invite")
+    invitePartner(@CurrentUser() user: RequestUser, @Body() dto: InvitePartnerDto) {
+        return this.partner.invite(user, dto.userId);
+    }
+
+    @Post("partner/:id/accept")
+    acceptPartner(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+        return this.partner.accept(user, id);
+    }
+
+    @Post("partner/:id/leave")
+    leavePartner(@CurrentUser() user: RequestUser, @Param("id") id: string) {
+        return this.partner.leave(user, id);
+    }
 
     // Declared BEFORE any parameterised route: Nest matches in declaration order, and a
     // later "/:something" would otherwise swallow these.

@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { LiveBus } from "../live/live.bus";
+import { PartnerService } from "../live/partner.service";
 import { WorkoutSetType, WorkoutStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { parseDateInput } from "../../shared/parse-date";
@@ -24,7 +25,8 @@ export class WorkoutsService {
     // in the unit tests, which have no Nest container. Every publish site is guarded.
     constructor(
         private readonly prisma: PrismaService,
-        @Optional() private readonly live?: LiveBus
+        @Optional() private readonly live?: LiveBus,
+        @Optional() private readonly partners?: PartnerService
     ) {}
 
     /**
@@ -54,6 +56,11 @@ export class WorkoutsService {
         }
         try {
             this.live.publish(userId, { name, ids, version: version ?? null, at: new Date().toISOString() });
+            // Whoever is training with this person is watching their session; tell them
+            // it moved so their panel re-reads it.
+            if (this.partners && name === "workout.changed") {
+                void this.partners.announceWorkout(userId, ids[0]);
+            }
             if (touches && (touches.presence || touches.feed || touches.peers)) {
                 this.live.broadcast({ name: "team.changed", ids, touches, at: new Date().toISOString() });
             }
@@ -117,7 +124,15 @@ export class WorkoutsService {
         // owner's own setting is the single thing that decides otherwise. Keeping both
         // meant a teammate's live session read as "Деталі недоступні" to everyone,
         // including people the owner had never hidden anything from.
-        if (!isOwner && visibility && !visibility.canSeeDetail(owner.userId)) {
+        // Training together is consent to be watched — but only for the session you are
+        // both in. It is scoped to their ACTIVE workout and lasts as long as the
+        // partnership does; it is not a standing grant and does not reach their history.
+        const partnerViewing = !isOwner
+            && owner.status === "active"
+            && Boolean(this.partners)
+            && (await this.partners!.activePartnerOf(callerId).catch(() => null)) === owner.userId;
+
+        if (!isOwner && !partnerViewing && visibility && !visibility.canSeeDetail(owner.userId)) {
             // 403 with a code, not the 404 used above: the caller is meant to see that
             // this session exists and to be offered the chance to ask for access. Hiding
             // its existence would make the request button impossible to explain.
