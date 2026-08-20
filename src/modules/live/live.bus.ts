@@ -170,6 +170,10 @@ export class LiveBus implements OnApplicationShutdown {
         set.delete(token);
         if (!set.size) {
             this.watchers.delete(held.workoutId);
+            // Nothing is watching this session any more, so its rate-limit stamp is dead
+            // weight — and without this the map grows by one entry per session ever
+            // watched and never shrinks.
+            this.lastWatchPublish.delete(held.workoutId);
         }
     }
 
