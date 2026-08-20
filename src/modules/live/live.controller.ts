@@ -9,6 +9,7 @@ import { LiveService } from "./live.service";
 import { PartnerService } from "./partner.service";
 import { CHEER_EMOJI } from "./live.rules";
 import { CheerDto } from "./dto/cheer.dto";
+import { StopWatchDto, WatchDto } from "./dto/watch.dto";
 import { InvitePartnerDto } from "./dto/partner.dto";
 
 // A comment frame often enough to beat any idle timeout between here and the phone, and
@@ -73,6 +74,16 @@ export class LiveController {
         return this.live.cheersFor(user, workoutId);
     }
 
+    @Post("watch")
+    watch(@CurrentUser() user: RequestUser, @Body() dto: WatchDto) {
+        return this.live.watch(user, dto.token, dto.workoutId);
+    }
+
+    @Post("watch/stop")
+    stopWatch(@CurrentUser() user: RequestUser, @Body() dto: StopWatchDto) {
+        return this.live.stopWatch(dto.token);
+    }
+
     @Post("cheer")
     cheer(@CurrentUser() user: RequestUser, @Body() dto: CheerDto) {
         return this.live.cheer(user, dto.workoutId, dto.emoji);
@@ -96,14 +107,18 @@ export class LiveController {
         response.setHeader("X-Accel-Buffering", "no");
         response.setHeader("Connection", "keep-alive");
 
-        const { events, close } = this.bus.open(user.id);
+        const stream = this.bus.open(user.id);
+        const { events, close } = stream;
         // The response closing is the ONLY reliable signal a device went away: a phone
         // that loses signal never sends anything, it just stops being reachable. Without
         // this the map keeps a dead subject per lost connection forever.
         request.on("close", close);
         response.on("close", close);
 
-        const hello: LiveEvent = { name: "hello", at: new Date().toISOString() };
+        // The token identifies THIS connection, and the client echoes it back when it
+        // registers a watch — so a person with two devices can watch two sessions, and
+        // closing one does not tear down the other.
+        const hello: LiveEvent = { name: "hello", at: new Date().toISOString(), token: stream.token };
         const beats = interval(HEARTBEAT_MS).pipe(
             map((): LiveEvent => ({ name: "ping", at: new Date().toISOString() }))
         );

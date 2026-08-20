@@ -25,9 +25,14 @@ import { Observable, Subject } from "rxjs";
 // what the whole gym sees — a session opened or closed, somebody's first set was ticked,
 // a workout appeared or vanished. It stays a hint, so listeners re-read through the
 // routes they are already allowed to read.
+// How often a watched session may announce itself. See publishToWatchers.
+const WATCH_MIN_GAP_MS = 2000;
+
 export type LiveEventName =
     | "workout.changed"
     | "workout.deleted"
+    // A session somebody is WATCHING moved. Carries ids and a version, never content.
+    | "workout.watch"
     | "team.changed"
     | "cheer"
     // Somebody asked for access, or answered a request. The listener re-reads
@@ -54,6 +59,8 @@ export interface LiveEvent {
      * single recipient and IS the message, so re-reading it through another route would
      * be a round-trip for nothing. Everything else stays a hint.
      */
+    /** Only on the hello frame: identifies this connection for watch registration. */
+    token?: string;
     cheer?: { emoji: string; workoutId: string; actor: { id: string; displayName: string; avatarUrl: string | null } };
     /**
      * WHICH shared surfaces a team event touches.
@@ -75,18 +82,43 @@ export class LiveBus implements OnApplicationShutdown {
     private readonly streams = new Map<string, Set<Subject<LiveEvent>>>();
 
     /**
+     * Who is watching which session, keyed by CONNECTION rather than by person.
+     *
+     * A person is plural — `streams` above is a Set per user precisely because devices
+     * are. Keying a watch by user id would mean a desktop opening the panel silently
+     * evicts the phone's, and closing one idle tab tears down the other device's watch.
+     *
+     * Two maps: one for the publish path (which streams care about this workout) and one
+     * for teardown (what was this connection watching), so neither is a scan.
+     */
+    private readonly watchers = new Map<string, Set<string>>();
+    private readonly watching = new Map<string, { workoutId: string; subject: Subject<LiveEvent> }>();
+    private nextToken = 1;
+    /** Live subjects by token, so a watch can find the connection that registered it. */
+    private readonly openSubjects = new Map<string, Subject<LiveEvent>>();
+    /** Last fan-out per watched session, for the rate limit in publishToWatchers. */
+    private readonly lastWatchPublish = new Map<string, number>();
+
+    /**
      * A stream for one device. The caller is responsible for completing it — see
      * LiveController, which does so when the HTTP response closes.
      */
-    open(userId: string): { events: Observable<LiveEvent>; close: () => void } {
+    open(userId: string): { events: Observable<LiveEvent>; close: () => void; token: string } {
         const subject = new Subject<LiveEvent>();
+        const token = `s${this.nextToken += 1}`;
         const existing = this.streams.get(userId);
         if (existing) {
             existing.add(subject);
         } else {
             this.streams.set(userId, new Set([subject]));
         }
+        this.openSubjects.set(token, subject);
         const close = () => {
+            // Teardown of the watch lives HERE, in the closer wired to both the request
+            // and the response, because that is the only hook that fires for a phone that
+            // simply stopped being reachable. Idempotent, since both fire.
+            this.unwatch(token);
+            this.openSubjects.delete(token);
             const set = this.streams.get(userId);
             if (!set) {
                 return;
@@ -99,7 +131,93 @@ export class LiveBus implements OnApplicationShutdown {
             }
             subject.complete();
         };
-        return { events: subject.asObservable(), close };
+        return { events: subject.asObservable(), close, token };
+    }
+
+    /**
+     * Register a connection as watching one session.
+     *
+     * Authorization is the CALLER's job and must happen before this — see
+     * LiveService.watch. A hint's arrival TIME is information: an unauthorized watcher
+     * receiving one per set would learn a private member's tempo, set count and gym hours
+     * without ever reading a single row.
+     */
+    watch(token: string, workoutId: string): void {
+        this.unwatch(token);
+        const subject = this.subjectOf(token);
+        if (!subject) {
+            return;
+        }
+        this.watching.set(token, { workoutId, subject });
+        const set = this.watchers.get(workoutId);
+        if (set) {
+            set.add(token);
+        } else {
+            this.watchers.set(workoutId, new Set([token]));
+        }
+    }
+
+    unwatch(token: string): void {
+        const held = this.watching.get(token);
+        if (!held) {
+            return;
+        }
+        this.watching.delete(token);
+        const set = this.watchers.get(held.workoutId);
+        if (!set) {
+            return;
+        }
+        set.delete(token);
+        if (!set.size) {
+            this.watchers.delete(held.workoutId);
+        }
+    }
+
+    /** Drop every watch on a session — it finished, was deleted, or access was withdrawn. */
+    dropWatchers(workoutId: string): void {
+        for (const token of [...(this.watchers.get(workoutId) || [])]) {
+            this.unwatch(token);
+        }
+    }
+
+    /**
+     * Deliver to the connections watching this session, and to nobody else.
+     *
+     * Rate-limited per session. Every autosave announces, which for somebody typing in a
+     * notes field is roughly one every 650 ms — and each hint costs every WATCHER a full
+     * workout read, so an unthrottled fan-out burns through their own 200-requests-a-
+     * minute budget and starts 429-ing their own saves. Two seconds is invisible to a
+     * person watching a barbell.
+     */
+    publishToWatchers(workoutId: string, event: LiveEvent): void {
+        const set = this.watchers.get(workoutId);
+        if (!set || !set.size) {
+            return;
+        }
+        const now = Date.now();
+        const last = this.lastWatchPublish.get(workoutId) || 0;
+        if (now - last < WATCH_MIN_GAP_MS) {
+            return;
+        }
+        this.lastWatchPublish.set(workoutId, now);
+        for (const token of set) {
+            const held = this.watching.get(token);
+            if (!held) {
+                continue;
+            }
+            try {
+                held.subject.next(event);
+            } catch (error) {
+                this.logger.warn(`watch publish failed: ${String(error)}`);
+            }
+        }
+    }
+
+    private subjectOf(token: string): Subject<LiveEvent> | null {
+        // The subject is captured when the watch is registered, so a token that no longer
+        // has a live stream simply registers nothing.
+        const held = this.watching.get(token);
+        return held ? held.subject : this.openSubjects.get(token) || null;
     }
 
     publish(userId: string, event: LiveEvent): void {
@@ -125,6 +243,10 @@ export class LiveBus implements OnApplicationShutdown {
      * dropping connections hard instead of letting clients reconnect on their own terms.
      */
     onApplicationShutdown(): void {
+        this.watchers.clear();
+        this.watching.clear();
+        this.openSubjects.clear();
+        this.lastWatchPublish.clear();
         for (const set of this.streams.values()) {
             for (const subject of set) {
                 subject.complete();
@@ -148,11 +270,18 @@ export class LiveBus implements OnApplicationShutdown {
     }
 
     /** Connection counts for the health endpoint — there is otherwise no way to see this. */
-    stats(): { users: number; streams: number } {
+    stats(): { users: number; streams: number; watching: number; watched: number } {
         let streams = 0;
         for (const set of this.streams.values()) {
             streams += set.size;
         }
-        return { users: this.streams.size, streams };
+        return {
+            users: this.streams.size,
+            streams,
+            // Both counts, because a mismatch between them is what a registry leak looks
+            // like: connections still registered against sessions nobody is connected to.
+            watching: this.watching.size,
+            watched: this.watchers.size
+        };
     }
 }

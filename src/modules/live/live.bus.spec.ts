@@ -77,13 +77,13 @@ describe("LiveBus bookkeeping", () => {
         const phone = collect(bus, "user-1");
         const desktop = collect(bus, "user-1");
 
-        expect(bus.stats()).toEqual({ users: 1, streams: 2 });
+        expect(bus.stats()).toMatchObject({ users: 1, streams: 2 });
 
         phone.close();
-        expect(bus.stats()).toEqual({ users: 1, streams: 1 });
+        expect(bus.stats()).toMatchObject({ users: 1, streams: 1 });
 
         desktop.close();
-        expect(bus.stats()).toEqual({ users: 0, streams: 0 });
+        expect(bus.stats()).toMatchObject({ users: 0, streams: 0 });
     });
 
     it("closing the same stream twice does not corrupt the counts", () => {
@@ -95,7 +95,7 @@ describe("LiveBus bookkeeping", () => {
         phone.close();
         phone.close();
 
-        expect(bus.stats()).toEqual({ users: 1, streams: 1 });
+        expect(bus.stats()).toMatchObject({ users: 1, streams: 1 });
         bus.publish("user-1", event());
         expect(desktop.seen).toHaveLength(1);
     });
@@ -114,7 +114,7 @@ describe("LiveBus bookkeeping", () => {
         bus.onApplicationShutdown();
 
         expect(phoneCompleted).toBe(true);
-        expect(bus.stats()).toEqual({ users: 0, streams: 0 });
+        expect(bus.stats()).toMatchObject({ users: 0, streams: 0 });
         expect(theirs.seen).toHaveLength(0);
     });
 });

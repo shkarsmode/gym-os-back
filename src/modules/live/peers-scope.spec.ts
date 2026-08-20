@@ -63,7 +63,8 @@ function createService(privateOwners: string[]) {
             }
         }
     };
-    return { service: new LiveService(prisma as PrismaService, new LiveBus()), queries };
+    const partners = { activePartnerOf: async () => null } as any;
+    return { service: new LiveService(prisma as PrismaService, new LiveBus(), partners), queries };
 }
 
 describe("/live/peers", () => {
@@ -123,7 +124,7 @@ describe("presence", () => {
                 }]
             }
         };
-        const service = new LiveService(prisma as PrismaService, new LiveBus());
+        const service = new LiveService(prisma as PrismaService, new LiveBus(), { activePartnerOf: async () => null } as any);
         const answer: any = await service.presence();
         expect(answer.training[0]).not.toHaveProperty("title");
     });

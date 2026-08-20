@@ -9,6 +9,7 @@ import { QuotaTier } from "../../shared/admin";
 import { WORKOUT_PAGE_ORDER, cursorFilter, decodeCursor, encodeCursor } from "../../shared/cursor";
 import { dateInput, serializeWorkout } from "../../shared/serialize";
 import { Visibility } from "../../shared/visibility";
+import { assertWorkoutReadable } from "../../shared/workout-access";
 import { AddWorkoutExerciseDto, CreateCardioSessionDto, CreateWorkoutDto, CreateWorkoutSetDto, SaveWorkoutDto, UpdateCardioSessionDto, UpdateWorkoutDto, UpdateWorkoutExerciseDto, UpdateWorkoutSetDto } from "./dto/workout.dto";
 
 function parseOptionalDate(value?: string | null): Date | null {
@@ -49,7 +50,13 @@ export class WorkoutsService {
         // minute for the whole length of a session — and telling the entire gym to
         // re-read on each of those turns one person training into a steady broadcast to
         // every connected device that changes nothing on any of their screens.
-        touches: { presence?: boolean; feed?: boolean; peers?: boolean } | null = null
+        touches: { presence?: boolean; feed?: boolean; peers?: boolean } | null = null,
+        // Whether anyone watching this session should be told. Rate-limited inside the
+        // bus: the client autosaves on a 650 ms debounce, so an unthrottled fan-out would
+        // hand every watcher a hint per keystroke-settle — and each hint costs the
+        // WATCHER a full workout read, burning their own 200/min budget until their own
+        // saves start coming back 429.
+        watchable = false
     ) {
         if (!this.live || !userId || !ids.length) {
             return;
@@ -60,6 +67,18 @@ export class WorkoutsService {
             // it moved so their panel re-reads it.
             if (this.partners && name === "workout.changed") {
                 void this.partners.announceWorkout(userId, ids[0]);
+            }
+            // Anyone watching THIS session. Deliberately not `ids` — that array also
+            // carries the sibling sessions this save closed, and a watcher has no
+            // business learning those ids exist. The version travels so a client that
+            // already holds this revision can skip the re-read entirely.
+            if (watchable) {
+                this.live.publishToWatchers(ids[0], {
+                    name: "workout.watch",
+                    ids: [ids[0]],
+                    version: version ?? null,
+                    at: new Date().toISOString()
+                });
             }
             if (touches && (touches.presence || touches.feed || touches.peers)) {
                 this.live.broadcast({ name: "team.changed", ids, touches, at: new Date().toISOString() });
@@ -106,42 +125,16 @@ export class WorkoutsService {
     // planned or in-progress workout stays private; 404 rather than 403 so the response
     // does not confirm the id exists.
     async findOne(id: string, callerId: string, isAdmin = false, visibility?: Visibility) {
-        // Ownership is settled from a scalar read BEFORE the sets are fetched. Loading
-        // the tree and then deciding not to send it would mean a private member's every
-        // repetition had already left the database — the requirement is that it never
-        // does, not that it is stripped on the way out.
-        const owner = await this.prisma.workout.findUnique({
-            where: { id },
-            select: { userId: true, status: true }
+        // The whole decision lives in assertWorkoutReadable, shared with the live-watch
+        // registration so the two can never drift apart. It reads scalars only, so a
+        // refusal happens before a single set is fetched.
+        await assertWorkoutReadable(this.prisma, id, callerId, {
+            isAdmin,
+            visibility,
+            activePartnerId: this.partners
+                ? await this.partners.activePartnerOf(callerId).catch(() => null)
+                : null
         });
-        if (!owner) {
-            throw new NotFoundException("Workout not found");
-        }
-        const isOwner = owner.userId === callerId;
-        // There used to be a second, implicit privacy rule here: a peer's planned or
-        // in-progress session was refused outright. It predates this app having any real
-        // privacy model and now contradicts it — a session is shared by default, and the
-        // owner's own setting is the single thing that decides otherwise. Keeping both
-        // meant a teammate's live session read as "Деталі недоступні" to everyone,
-        // including people the owner had never hidden anything from.
-        // Training together is consent to be watched — but only for the session you are
-        // both in. It is scoped to their ACTIVE workout and lasts as long as the
-        // partnership does; it is not a standing grant and does not reach their history.
-        const partnerViewing = !isOwner
-            && owner.status === "active"
-            && Boolean(this.partners)
-            && (await this.partners!.activePartnerOf(callerId).catch(() => null)) === owner.userId;
-
-        if (!isOwner && !partnerViewing && visibility && !visibility.canSeeDetail(owner.userId)) {
-            // 403 with a code, not the 404 used above: the caller is meant to see that
-            // this session exists and to be offered the chance to ask for access. Hiding
-            // its existence would make the request button impossible to explain.
-            throw new ForbiddenException({
-                code: "WORKOUT_PRIVATE",
-                ownerId: owner.userId,
-                message: "This member keeps their workout details private."
-            });
-        }
         const workout = await this.prisma.workout.findUnique({
             where: { id },
             include: this.includeWorkout()
@@ -465,7 +458,19 @@ export class WorkoutsService {
             // mention it.
             peers: isNew || statusChanged || closedOtherIds.length > 0
         };
-        this.announce(ownerId, "workout.changed", [id, ...closedOtherIds], updatedAt?.toISOString() || null, touches);
+        this.announce(
+            ownerId,
+            "workout.changed",
+            [id, ...closedOtherIds],
+            updatedAt?.toISOString() || null,
+            touches,
+            // Every save is worth a hint to somebody actually watching this session —
+            // they are looking at the sets, and a weight correction is as visible to them
+            // as a ticked box. The firehose is dealt with by rate-limiting the fan-out
+            // rather than by guessing which saves matter, which would need a count query
+            // on the hottest write path in the app.
+            true
+        );
         return {
             ok: true,
             id,

@@ -4,6 +4,9 @@ import { serializeWorkoutPrivate, serializeWorkoutSummary } from "../../shared/s
 import { Visibility } from "../../shared/visibility";
 import { RequestUser } from "../../shared/current-user.decorator";
 import { LiveBus } from "./live.bus";
+import { PartnerService } from "./partner.service";
+import { isAdminUser } from "../../shared/admin";
+import { assertWorkoutReadable } from "../../shared/workout-access";
 import { CHEER_EMOJI, allowCheer, isCheerable, onePerPerson, presenceState, trimCheerHistory } from "./live.rules";
 
 /**
@@ -50,7 +53,8 @@ export class LiveService {
 
     constructor(
         private readonly prisma: PrismaService,
-        private readonly bus: LiveBus
+        private readonly bus: LiveBus,
+        private readonly partners: PartnerService
     ) {}
 
     /**
@@ -174,6 +178,36 @@ export class LiveService {
                 ...closed.map(serializeWorkoutPrivate)
             ]
         };
+    }
+
+    /**
+     * Register a connection to receive "this session moved" hints.
+     *
+     * AUTHORIZED HERE, not when the hint is answered. The tempting version of this — let
+     * anyone register, and let the re-read 403 — is wrong, because a hint's arrival TIME
+     * is itself information: somebody who scraped a private member's workout id would
+     * receive an event every time they ticked a set, and from the timings alone recover
+     * their set count, their rest intervals and their gym hours, without ever reading a
+     * row. The check below is the one GET /workouts/:id performs, so it is byte-identical
+     * to the answer that route already gives and adds no new oracle.
+     *
+     * A refused watcher and an idle session are then indistinguishable: silence in both.
+     */
+    async watch(user: RequestUser, token: string, workoutId: string) {
+        // Throws exactly as the read route does — NotFound for a session that is not
+        // there, WORKOUT_PRIVATE for one whose owner hid it.
+        await assertWorkoutReadable(this.prisma, workoutId, user.id, {
+            isAdmin: isAdminUser(user),
+            visibility: await Visibility.resolve(this.prisma, user),
+            activePartnerId: await this.partners.activePartnerOf(user.id).catch(() => null)
+        });
+        this.bus.watch(token, workoutId);
+        return { ok: true };
+    }
+
+    stopWatch(token: string) {
+        this.bus.unwatch(token);
+        return { ok: true };
     }
 
     async cheer(user: RequestUser, workoutId: string, emoji: string) {
