@@ -40,6 +40,9 @@ export class WorkoutsService {
         }
         try {
             this.live.publish(userId, { name, ids, version: version ?? null, at: new Date().toISOString() });
+            // A session opening or closing changes who is visibly in the gym, which is
+            // true for everyone rather than just this account's devices.
+            this.live.broadcast({ name: "presence.changed", at: new Date().toISOString() });
         } catch (error) {
             // Never let a notification failure surface as a failed save.
         }

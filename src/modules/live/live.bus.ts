@@ -21,7 +21,7 @@ import { Observable, Subject } from "rxjs";
  * replica B, and this needs a shared bus (Redis pub/sub) before that happens.
  */
 
-export type LiveEventName = "workout.changed" | "workout.deleted" | "hello" | "ping";
+export type LiveEventName = "workout.changed" | "workout.deleted" | "presence.changed" | "cheer" | "hello" | "ping";
 
 export interface LiveEvent {
     name: LiveEventName;
@@ -29,6 +29,12 @@ export interface LiveEvent {
     ids?: string[];
     /** The server revision the writer produced, so a listener can ignore what it already has. */
     version?: string | null;
+    /**
+     * The one event that carries content rather than a hint: a cheer is addressed to a
+     * single recipient and IS the message, so re-reading it through another route would
+     * be a round-trip for nothing. Everything else stays a hint.
+     */
+    cheer?: { emoji: string; workoutId: string; actor: { id: string; displayName: string; avatarUrl: string | null } };
     at: string;
 }
 
@@ -94,6 +100,20 @@ export class LiveBus implements OnApplicationShutdown {
             }
         }
         this.streams.clear();
+    }
+
+    /**
+     * Send to every open stream.
+     *
+     * Only for events that are true for everyone at once — right now that is presence,
+     * "somebody started or finished a session". It stays a hint: listeners answer by
+     * re-reading the guarded presence route, so this cannot become a way to push one
+     * person's data to the whole gym.
+     */
+    broadcast(event: LiveEvent): void {
+        for (const userId of [...this.streams.keys()]) {
+            this.publish(userId, event);
+        }
     }
 
     /** Connection counts for the health endpoint — there is otherwise no way to see this. */

@@ -1,10 +1,13 @@
-import { Controller, MessageEvent, Req, Res, Sse, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, MessageEvent, Param, Post, Req, Res, Sse, UseGuards } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { Observable, interval, map, merge } from "rxjs";
 import { ApprovedGuard } from "../../shared/approved.guard";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
 import { JwtAuthGuard } from "../../shared/jwt-auth.guard";
 import { LiveBus, LiveEvent } from "./live.bus";
+import { LiveService } from "./live.service";
+import { CHEER_EMOJI } from "./live.rules";
+import { CheerDto } from "./dto/cheer.dto";
 
 // A comment frame often enough to beat any idle timeout between here and the phone, and
 // often enough that a connection dropped by a sleeping radio is noticed in seconds rather
@@ -25,7 +28,33 @@ const HEARTBEAT_MS = 25_000;
 @Controller("live")
 @UseGuards(JwtAuthGuard, ApprovedGuard)
 export class LiveController {
-    constructor(private readonly bus: LiveBus) {}
+    constructor(
+        private readonly bus: LiveBus,
+        private readonly live: LiveService
+    ) {}
+
+    // Declared BEFORE any parameterised route: Nest matches in declaration order, and a
+    // later "/:something" would otherwise swallow these.
+    @Get("presence")
+    presence() {
+        return this.live.presence();
+    }
+
+    @Get("cheers/:workoutId")
+    cheers(@CurrentUser() user: RequestUser, @Param("workoutId") workoutId: string) {
+        return this.live.cheersFor(user, workoutId);
+    }
+
+    @Post("cheer")
+    cheer(@CurrentUser() user: RequestUser, @Body() dto: CheerDto) {
+        return this.live.cheer(user, dto.workoutId, dto.emoji);
+    }
+
+    /** The emoji a client is allowed to offer, so the two sides cannot drift apart. */
+    @Get("cheer-options")
+    cheerOptions() {
+        return { emoji: CHEER_EMOJI };
+    }
 
     @Sse("stream")
     stream(
