@@ -7,6 +7,25 @@ import { UpdateProfileDto } from "./dto/update-profile.dto";
 
 const ALLOWED_ROLES = ["free", "premium", "admin"];
 
+/**
+ * The year implied by a date of birth, or null if there isn't a usable one.
+ *
+ * A supplied date is the source of truth for the year. Taking the client's word for both
+ * lets the two disagree, and everything that reads the age reads the YEAR — so the
+ * disagreement would surface as a coach quietly planning for somebody a decade older
+ * than they are.
+ */
+export function deriveBirthYear(birthDate: string | undefined | null): number | null {
+    if (!birthDate) {
+        return null;
+    }
+    const year = Number(String(birthDate).slice(0, 4));
+    if (!Number.isInteger(year) || year < 1900 || year > new Date().getFullYear()) {
+        return null;
+    }
+    return year;
+}
+
 @Injectable()
 export class UsersService {
     constructor(private readonly prisma: PrismaService) {}
@@ -77,20 +96,26 @@ export class UsersService {
     }
 
     updateProfile(userId: string, dto: UpdateProfileDto) {
+        const data = { ...dto };
+        const derived = deriveBirthYear(dto.birthDate);
+        if (derived !== null) {
+            data.birthYear = derived;
+        }
         return this.prisma.userProfile.upsert({
             where: { userId },
-            update: dto,
+            update: data,
             create: {
                 userId,
-                name: dto.name || dto.displayName || "GymOS User",
-                displayName: dto.displayName || dto.name || "GymOS User",
-                height: dto.height,
-                bodyweight: dto.bodyweight,
-                birthYear: dto.birthYear,
-                gender: dto.gender || "male",
-                trainingGoal: dto.trainingGoal,
-                trainingExperience: dto.trainingExperience,
-                favoriteMuscleGroup: dto.favoriteMuscleGroup
+                name: data.name || data.displayName || "GymOS User",
+                displayName: data.displayName || data.name || "GymOS User",
+                height: data.height,
+                bodyweight: data.bodyweight,
+                birthYear: data.birthYear,
+                birthDate: data.birthDate,
+                gender: data.gender || "male",
+                trainingGoal: data.trainingGoal,
+                trainingExperience: data.trainingExperience,
+                favoriteMuscleGroup: data.favoriteMuscleGroup
             }
         });
     }

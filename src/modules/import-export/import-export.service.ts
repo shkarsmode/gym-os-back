@@ -295,6 +295,7 @@ export class ImportExportService {
                 trainingGoal: item.profile?.trainingGoal || "Персональний прогрес",
                 trainingExperience: item.profile?.trainingExperience || "Не вказано",
                 favoriteMuscleGroup: item.profile?.favoriteMuscleGroup || "Все тіло",
+                birthDate: item.profile?.birthDate || null,
                 createdAt: item.createdAt.toISOString(),
                 updatedAt: item.updatedAt.toISOString()
             })),

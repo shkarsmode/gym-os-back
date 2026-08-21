@@ -208,6 +208,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 'ALTER TABLE "UserProfile" ADD COLUMN IF NOT EXISTS "birthYear" INTEGER;'
             );
 
+            // Full date of birth. NULL for every profile filled in before onboarding
+            // asked for it — those keep only the year, which is all anything reads.
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "UserProfile" ADD COLUMN IF NOT EXISTS "birthDate" TEXT;'
+            );
+
             // Index creation is ~19 round-trips, so it stays gated — but on a version
             // counter, not on the existence of one index. Bumping INDEX_SET_VERSION is
             // what makes a newly added index actually get created on an existing DB.

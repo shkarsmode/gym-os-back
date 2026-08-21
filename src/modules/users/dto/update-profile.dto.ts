@@ -1,4 +1,4 @@
-import { IsIn, IsNumber, IsOptional, IsString, Max, Min } from "class-validator";
+import { IsIn, IsNumber, IsOptional, IsString, Matches, Max, Min } from "class-validator";
 
 export class UpdateProfileDto {
     @IsOptional()
@@ -28,6 +28,11 @@ export class UpdateProfileDto {
     @Min(1920)
     @Max(2030)
     birthYear?: number;
+
+    /** YYYY-MM-DD. `birthYear` is derived from it server-side; clients may send either. */
+    @IsOptional()
+    @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: "birthDate must be YYYY-MM-DD" })
+    birthDate?: string;
 
     @IsOptional()
     @IsIn(["male", "female"])

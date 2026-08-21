@@ -87,6 +87,11 @@ model UserProfile {
   // Year of birth — asked for during AI-coach onboarding. Age changes recovery and
   // strength-standard expectations, so the coach needs it; NULL when never provided.
   birthYear           Int?
+  // Full date of birth as YYYY-MM-DD. `birthYear` stays and is DERIVED from this on
+  // every write, so everything already reading the year — the coach's recovery and
+  // strength-standard expectations — keeps working untouched whether a profile was
+  // filled in before or after this shipped.
+  birthDate           String?
   gender              String   @default("male")
   trainingGoal        String?
   trainingExperience  String?
