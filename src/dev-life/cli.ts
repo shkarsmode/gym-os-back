@@ -1084,7 +1084,13 @@ async function main(): Promise<void> {
     const startedAt = Date.now();
     await run();
     if (command !== "stats") {
-        process.stdout.write(`  (${((Date.now() - startedAt) / 1000).toFixed(1)}s)\n`);
+        // Reported because the capacity answer depends on it: this process runs on a box
+        // that is also serving production, and "how much does one tick cost" should be a
+        // measurement rather than the 130 MB somebody once guessed. Node exposes no true
+        // high-water mark, but it rarely returns memory to the OS, so RSS at exit is
+        // within a few MB of the peak.
+        const rssMb = Math.round(process.memoryUsage().rss / (1024 * 1024));
+        process.stdout.write(`  (${((Date.now() - startedAt) / 1000).toFixed(1)}s, ${rssMb} MB rss)\n`);
     }
 }
 
