@@ -469,6 +469,10 @@ export class FeedService {
                     ? Math.round((workout.finishedAt.getTime() - workout.startedAt.getTime()) / 60000)
                     : null),
             exercises: workout.exercises.map((item) => ({
+                // The id lets the reader draw the same thumbnail the catalogue uses —
+                // every client already holds the whole exercise list, so this costs one
+                // field and saves a round trip.
+                exerciseId: item.exerciseId,
                 name: item.exercise?.name || "Вправа",
                 muscleGroup: item.exercise?.primaryMuscleGroup || "",
                 sets: item.sets.filter((set) => set.isCompleted).length,
