@@ -33,6 +33,9 @@ if ! docker inspect "$CONTAINER" >/dev/null 2>&1; then
     exit 2
 fi
 
+# NOTE: the heredocs below are intentionally UNQUOTED so ${CONTAINER} and ${RETENTION}
+# expand here. Every OTHER $ that must survive into the unit has to be escaped — a bare
+# $(...) would be executed at install time and its answer frozen into the file.
 write_unit() {
     local path="$1"
     cat > "$path"
@@ -47,9 +50,14 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
+# Skipping is not failing. Every push to develop restarts the API container, and a tick
+# that fires during that window used to die with "cannot exec in a stopped container" —
+# which put a red FAILED line in the journal for something entirely routine, and made a
+# real failure indistinguishable from deploy noise.
+#
 # DEV_LIFE=1 is the deliberate confirmation the tool demands; the container's own
 # DATABASE_URL already points at the development database and is checked independently.
-ExecStart=/usr/bin/docker exec -e DEV_LIFE=1 ${CONTAINER} node dist/dev-life/cli.js tick
+ExecStart=/bin/sh -c '    if [ "\$(/usr/bin/docker inspect -f {{.State.Running}} ${CONTAINER} 2>/dev/null)" != "true" ]; then         echo "${CONTAINER} is not running (deploy in progress?) — skipping this tick";         exit 0;     fi;     exec /usr/bin/docker exec -e DEV_LIFE=1 ${CONTAINER} node dist/dev-life/cli.js tick'
 TimeoutStartSec=180
 UNIT
 
@@ -76,7 +84,7 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/docker exec -e DEV_LIFE=1 ${CONTAINER} node dist/dev-life/cli.js prune --retention=${RETENTION}
+ExecStart=/bin/sh -c '    if [ "\$(/usr/bin/docker inspect -f {{.State.Running}} ${CONTAINER} 2>/dev/null)" != "true" ]; then         echo "${CONTAINER} is not running — skipping this prune";         exit 0;     fi;     exec /usr/bin/docker exec -e DEV_LIFE=1 ${CONTAINER} node dist/dev-life/cli.js prune --retention=${RETENTION}'
 TimeoutStartSec=600
 UNIT
 
