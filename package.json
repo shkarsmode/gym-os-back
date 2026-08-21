@@ -18,7 +18,8 @@
         "seed": "node --import tsx prisma/seed.ts",
         "build:media-index": "node --import tsx scripts/build-media-index.ts",
         "verify:kernel": "node scripts/verify-kernel.mjs",
-        "sync:kernel": "node scripts/sync-kernel.mjs"
+        "sync:kernel": "node scripts/sync-kernel.mjs",
+        "dev-life": "node --import tsx src/dev-life/cli.ts"
     },
     "dependencies": {
         "@google/genai": "^2.11.0",
