@@ -966,7 +966,7 @@ async function stats(): Promise<void> {
         { workoutsPerDay, bytesPerWorkout: perWorkout, retentionDays },
         dbBytes,
         fixed,
-        Number(process.env.DEV_LIFE_TICK_PEAK_MB || 130)
+        Number(process.env.DEV_LIFE_TICK_PEAK_MB || 78)
     );
 
     process.stdout.write(
