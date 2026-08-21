@@ -66,7 +66,7 @@ export class ImportExportService {
         const [open, closed] = await Promise.all([
             this.prisma.workout.findMany({
                 where: { userId: { not: callerId, notIn: hiddenOwners }, date: { gte: since } },
-                include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true },
+                include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, supersetGroups: true, cardioSessions: true },
                 orderBy: WORKOUT_PAGE_ORDER
             }),
             hiddenOwners.length
@@ -134,6 +134,7 @@ export class ImportExportService {
                 take: windowed ? ownLimit + 1 : undefined,
                 include: {
                     exercises: { include: { sets: true }, orderBy: { order: "asc" } },
+                    supersetGroups: true,
                     cardioSessions: true
                 },
                 // date DESC is load-bearing beyond paging: the scoring kernel resolves
@@ -227,7 +228,7 @@ export class ImportExportService {
                         status: "active",
                         id: { notIn: ownWorkouts.map((item) => item.id) }
                     },
-                    include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, cardioSessions: true }
+                    include: { exercises: { include: { sets: true }, orderBy: { order: "asc" } }, supersetGroups: true, cardioSessions: true }
                 }),
                 // Peers as summaries: enough for the calendar, day sheet and activity
                 // feed, without a single set crossing the wire — and for a member who
@@ -584,11 +585,25 @@ async function importWorkouts(transaction: any, userId: string, workouts: any[])
                 lastSetAt: workout.lastSetAt ? parseDate(workout.lastSetAt) : null,
                 durationOverride: workout.durationOverride === undefined || workout.durationOverride === null ? null : Math.round(Number(workout.durationOverride)),
                 notes: workout.notes || null,
+                // Declared before the members that reference them, so the foreign key is
+                // satisfied inside the same create.
+                supersetGroups: {
+                    create: (workout.supersetGroups || []).map((group: any) => ({
+                        id: group.id,
+                        restSeconds: Number(group.restSeconds) || 120
+                    }))
+                },
                 exercises: {
                     create: (workout.exercises || []).map((exercise: any, index: number) => ({
                         id: exercise.id,
                         exerciseId: exercise.exerciseId,
                         order: exercise.order || index + 1,
+                        // A reference to a group this export did not carry restores as an
+                        // ordinary exercise rather than failing the whole import.
+                        supersetGroupId: exercise.supersetGroupId
+                            && (workout.supersetGroups || []).some((group: any) => group.id === exercise.supersetGroupId)
+                            ? exercise.supersetGroupId
+                            : null,
                         notes: exercise.notes || null,
                         sets: {
                             create: (exercise.sets || []).map((set: any) => ({
@@ -596,6 +611,11 @@ async function importWorkouts(transaction: any, userId: string, workouts: any[])
                                 type: (set.type || "working") as WorkoutSetType,
                                 weight: Number(set.weight) || 0,
                                 repetitions: Number(set.repetitions) || 0,
+                                // Restored too. Without it a backup silently turned every
+                                // timed hold back into a rep-based set.
+                                durationSeconds: set.durationSeconds === undefined || set.durationSeconds === null
+                                    ? null
+                                    : Math.round(Number(set.durationSeconds)),
                                 rpe: Number(set.rpe) || null,
                                 restSeconds: Number(set.restSeconds) || 90,
                                 // Same rule as WorkoutsService: a completed session has no

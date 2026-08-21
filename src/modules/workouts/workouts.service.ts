@@ -3,6 +3,7 @@ import { LiveBus } from "../live/live.bus";
 import { PartnerService } from "../live/partner.service";
 import { WorkoutSetType, WorkoutStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { assertSupersetTier, canCreateSupersets } from "../../shared/superset-access";
 import { parseDateInput } from "../../shared/parse-date";
 import { assertWorkoutQuota as enforceWorkoutQuota } from "../../shared/workout-quota";
 import { QuotaTier } from "../../shared/admin";
@@ -19,6 +20,9 @@ function parseOptionalDate(value?: string | null): Date | null {
     const date = new Date(value);
     return Number.isFinite(date.getTime()) ? date : null;
 }
+
+/** Two minutes after a whole round — long enough to matter, short enough not to stall. */
+const DEFAULT_SUPERSET_REST = 120;
 
 @Injectable()
 export class WorkoutsService {
@@ -304,6 +308,30 @@ export class WorkoutsService {
             await enforceWorkoutQuota(this.prisma, userId, parseDateInput(dto.date), tier);
         }
 
+        // Supersets. Resolved before anything is written so the tier check can refuse the
+        // whole save rather than let half of it land.
+        const requestedGroups = dto.supersetGroups || [];
+        // Read once, and only when there is something to authorise. A save carrying no
+        // groups needs neither the ids nor the stored rest, and that is every save the
+        // app made before this feature existed.
+        const storedGroups = existing && requestedGroups.length
+            ? await this.prisma.supersetGroup.findMany({ where: { workoutId: id }, select: { id: true, restSeconds: true } })
+            : [];
+        assertSupersetTier(tier, {
+            requestedGroupIds: requestedGroups.map((group) => group.id),
+            existingGroupIds: storedGroups.map((row) => row.id)
+        });
+        // A free account keeps the groups it already had, but cannot change them, so the
+        // stored rest wins over whatever the payload says.
+        const storedRest = new Map(storedGroups.map((row) => [row.id, row.restSeconds]));
+        const groupsCreate = requestedGroups.map((group) => ({
+            id: group.id,
+            restSeconds: canCreateSupersets(tier)
+                ? Math.max(0, Math.round(Number(group.restSeconds ?? DEFAULT_SUPERSET_REST)))
+                : storedRest.get(group.id) ?? DEFAULT_SUPERSET_REST
+        }));
+        const groupIds = new Set(groupsCreate.map((group) => group.id));
+
         const requestedExercises = dto.exercises || [];
         const exerciseIds = [...new Set(requestedExercises.map((item) => item.exerciseId).filter(Boolean))];
         const known = exerciseIds.length
@@ -343,6 +371,11 @@ export class WorkoutsService {
             exerciseId: exercise.exerciseId,
             order: exercise.order ?? index + 1,
             notes: exercise.notes ?? null,
+            // A reference to a group the payload did not declare costs the grouping, not
+            // the training: the block is saved as an ordinary exercise.
+            supersetGroupId: exercise.supersetGroupId && groupIds.has(exercise.supersetGroupId)
+                ? exercise.supersetGroupId
+                : null,
             sets: {
                 create: (exercise.sets || []).map((set) => ({
                     ...(set.id ? { id: set.id } : {}),
@@ -423,12 +456,27 @@ export class WorkoutsService {
                 }
             }));
 
+            // Safe now that the exercises referencing them are gone. Recreated from the
+            // payload with the same ids, exactly like sets and exercises. Skipped when
+            // neither side has any, so a workout that never used supersets is not charged
+            // a delete on every autosave.
+            if (requestedGroups.length || storedGroups.length) {
+                operations.push(this.prisma.supersetGroup.deleteMany({
+                    where: {
+                        workoutId: id
+                    }
+                }));
+            }
+
             operations.push(this.prisma.workout.update({
                 where: {
                     id
                 },
                 data: {
                     ...scalar,
+                    // Nested before `exercises` so the rows a member points at exist by
+                    // the time the FK is checked.
+                    ...(groupsCreate.length ? { supersetGroups: { create: groupsCreate } } : {}),
                     exercises: {
                         create: exercisesCreate
                     },
@@ -439,7 +487,14 @@ export class WorkoutsService {
             }));
         } else {
             operations.push(this.prisma.workout.create({
-                data: { id, userId: ownerId, ...scalar, exercises: { create: exercisesCreate }, cardioSessions: { create: cardioCreate } }
+                data: {
+                    id,
+                    userId: ownerId,
+                    ...scalar,
+                    ...(groupsCreate.length ? { supersetGroups: { create: groupsCreate } } : {}),
+                    exercises: { create: exercisesCreate },
+                    cardioSessions: { create: cardioCreate }
+                }
             }));
         }
 
@@ -745,6 +800,7 @@ export class WorkoutsService {
             // Phase 6 hydrates peer workouts through findOne, so this must not leak.
             user: { select: { id: true, displayName: true, avatarUrl: true } },
             exercises: { include: { exercise: true, sets: true }, orderBy: { order: "asc" as const } },
+            supersetGroups: true,
             cardioSessions: true
         };
     }

@@ -102,6 +102,46 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 'ALTER TABLE "Exercise" ADD COLUMN IF NOT EXISTS "isTimed" BOOLEAN NOT NULL DEFAULT false;'
             );
 
+            // Supersets. The group holds only the rest taken after a whole round —
+            // rounds themselves are the Nth set of each member, so there is no round
+            // table and every existing reader of sets keeps working untouched.
+            //
+            // Created before the column that references it, and the FK is ON DELETE SET
+            // NULL: losing a group must downgrade its members to ordinary exercises, never
+            // delete somebody's sets.
+            await this.$executeRawUnsafe(
+                'CREATE TABLE IF NOT EXISTS "SupersetGroup" ('
+                + '"id" TEXT NOT NULL PRIMARY KEY, '
+                + '"workoutId" TEXT NOT NULL, '
+                + '"restSeconds" INTEGER NOT NULL DEFAULT 120, '
+                + '"createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, '
+                + '"updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP'
+                + ');'
+            );
+            await this.$executeRawUnsafe(
+                'CREATE INDEX IF NOT EXISTS "SupersetGroup_workoutId_idx" ON "SupersetGroup"("workoutId");'
+            );
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "SupersetGroup" DROP CONSTRAINT IF EXISTS "SupersetGroup_workoutId_fkey";'
+            );
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "SupersetGroup" ADD CONSTRAINT "SupersetGroup_workoutId_fkey" '
+                + 'FOREIGN KEY ("workoutId") REFERENCES "Workout"("id") ON DELETE CASCADE ON UPDATE CASCADE;'
+            );
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "WorkoutExercise" ADD COLUMN IF NOT EXISTS "supersetGroupId" TEXT;'
+            );
+            await this.$executeRawUnsafe(
+                'CREATE INDEX IF NOT EXISTS "WorkoutExercise_supersetGroupId_idx" ON "WorkoutExercise"("supersetGroupId");'
+            );
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "WorkoutExercise" DROP CONSTRAINT IF EXISTS "WorkoutExercise_supersetGroupId_fkey";'
+            );
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "WorkoutExercise" ADD CONSTRAINT "WorkoutExercise_supersetGroupId_fkey" '
+                + 'FOREIGN KEY ("supersetGroupId") REFERENCES "SupersetGroup"("id") ON DELETE SET NULL ON UPDATE CASCADE;'
+            );
+
             // Per-user appearance/settings preferences (theme, accent, compact, workout
             // defaults …) as a JSON blob so they sync across devices. NULL = never saved
             // → client falls back to its local defaults. Idempotent, reconcile every start.

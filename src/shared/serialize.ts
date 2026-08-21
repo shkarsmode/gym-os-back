@@ -39,10 +39,17 @@ type WorkoutRow = {
     lastSetAt?: Date | null;
     durationOverride: number | null;
     notes: string | null;
+    // Superset groups of this workout. Optional so a caller selecting a narrower row
+    // still type-checks; absent means "not selected", which serializes to an empty list.
+    supersetGroups?: Array<{
+        id: string;
+        restSeconds: number;
+    }>;
     exercises: Array<{
         id: string;
         exerciseId: string;
         order: number;
+        supersetGroupId?: string | null;
         notes: string | null;
         sets: Array<{
             id: string;
@@ -193,10 +200,17 @@ export function serializeWorkout(item: WorkoutRow) {
         lastSetAt: item.lastSetAt?.toISOString() || null,
         durationOverride: item.durationOverride ?? null,
         notes: item.notes || "",
+        // Only the rest lives here — a round is the Nth set of each member, so the
+        // rounds themselves travel inside `exercises` as they always have.
+        supersetGroups: (item.supersetGroups || []).map((group) => ({
+            id: group.id,
+            restSeconds: group.restSeconds
+        })),
         exercises: item.exercises.map((exercise) => ({
             id: exercise.id,
             exerciseId: exercise.exerciseId,
             order: exercise.order,
+            supersetGroupId: exercise.supersetGroupId ?? null,
             notes: exercise.notes || "",
             sets: exercise.sets.map((set) => ({
                 id: set.id,

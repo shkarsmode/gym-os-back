@@ -209,6 +209,7 @@ model Workout {
   updatedAt        DateTime          @updatedAt
   user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   exercises        WorkoutExercise[]
+  supersetGroups   SupersetGroup[]
   cardioSessions   CardioSession[]
   personalRecords  PersonalRecord[]
 
@@ -223,14 +224,41 @@ model WorkoutExercise {
   exerciseId String
   order      Int
   notes      String?
+  // Membership of a superset, if any. Position inside the group (A1/A2/A3) is `order`
+  // — members are contiguous, so one ordering field serves both the workout and the
+  // group and the two can never disagree.
+  supersetGroupId String?
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
   workout    Workout      @relation(fields: [workoutId], references: [id], onDelete: Cascade)
   exercise   Exercise     @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
   sets       WorkoutSet[]
+  supersetGroup SupersetGroup? @relation(fields: [supersetGroupId], references: [id], onDelete: SetNull)
 
   @@index([workoutId])
   @@index([exerciseId])
+  @@index([supersetGroupId])
+}
+
+/// Two or three exercises performed back to back, with one rest after the whole round.
+///
+/// A ROUND IS THE Nth SET OF EACH MEMBER — there is deliberately no round entity. Rounds
+/// already exist as sets, so weight, reps, completion, volume, personal records, history
+/// and statistics all keep working through the code that already reads sets. A separate
+/// round table would either duplicate that state or become a second, disagreeing answer
+/// to "how many rounds are there".
+///
+/// The group therefore stores only what a set cannot: the rest taken after the round.
+model SupersetGroup {
+  id          String            @id @default(cuid())
+  workoutId   String
+  restSeconds Int               @default(120)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  workout     Workout           @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  exercises   WorkoutExercise[]
+
+  @@index([workoutId])
 }
 
 model WorkoutSet {

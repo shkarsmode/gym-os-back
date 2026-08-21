@@ -64,6 +64,16 @@ export class AddWorkoutExerciseDto {
     @IsOptional()
     @IsString()
     notes?: string;
+
+    /**
+     * Membership of a superset declared in `supersetGroups`, or null for a plain block.
+     *
+     * Position inside the group (A1/A2/A3) is `order` — members are contiguous, so one
+     * ordering field serves both the workout and the group and the two cannot disagree.
+     */
+    @IsOptional()
+    @IsString()
+    supersetGroupId?: string | null;
 }
 
 export class UpdateWorkoutExerciseDto {
@@ -243,6 +253,24 @@ export class ImportWorkoutExerciseDto extends AddWorkoutExerciseDto {
     sets?: CreateWorkoutSetDto[];
 }
 
+/**
+ * Two or three exercises performed back to back with one rest after the whole round.
+ *
+ * Carries only the rest, because a ROUND IS THE Nth SET OF EACH MEMBER — rounds already
+ * exist as sets, so nothing here duplicates weight, reps or completion.
+ */
+export class SupersetGroupDto {
+    /** The client's own id, referenced by each member's `supersetGroupId`. */
+    @IsString()
+    id!: string;
+
+    @IsOptional()
+    @IsNumber()
+    @Min(0)
+    @Max(3600)
+    restSeconds?: number;
+}
+
 export class SaveWorkoutDto {
     @IsDateString()
     date!: string;
@@ -309,4 +337,13 @@ export class SaveWorkoutDto {
     @IsOptional()
     @IsBoolean()
     confirmEmpty?: boolean;
+
+    // Declared groups. A member whose supersetGroupId names nothing here is saved as an
+    // ordinary exercise rather than rejected — a payload that lost a group should cost
+    // the grouping, not the training.
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => SupersetGroupDto)
+    supersetGroups?: SupersetGroupDto[];
 }
