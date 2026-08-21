@@ -39,21 +39,49 @@ echo "catalogue: $PROD_DB_CONTAINER/$prod_db  ->  $DEV_DB_CONTAINER/$dev_db"
 
 TABLES=(Exercise StrengthStandard Achievement)
 
+prod_psql() { docker exec "$PROD_DB_CONTAINER" psql -U "$prod_user" -d "$prod_db" "$@"; }
+dev_psql()  { docker exec -i "$DEV_DB_CONTAINER" psql -U "$dev_user" -d "$dev_db" "$@"; }
+
 # Truncate first so a re-run REPLACES the catalogue rather than colliding on primary keys.
 # Safe because every one of these tables is reference data on the dev side — nothing the
 # generator creates lives here, and WorkoutExercise references Exercise with onDelete:
 # Restrict, so this is deliberately done before any sessions exist.
 for table in "${TABLES[@]}"; do
-    docker exec "$DEV_DB_CONTAINER" psql -U "$dev_user" -d "$dev_db" -q \
-        -c "TRUNCATE TABLE \"$table\" CASCADE;"
+    dev_psql -q -c "TRUNCATE TABLE \"$table\" CASCADE;"
 done
 
-for table in "${TABLES[@]}"; do
-    rows=$(docker exec "$PROD_DB_CONTAINER" pg_dump -U "$prod_user" -d "$prod_db" \
-            --data-only --no-owner --no-privileges --table="public.\"$table\"" \
-        | docker exec -i "$DEV_DB_CONTAINER" psql -U "$dev_user" -d "$dev_db" -q -v ON_ERROR_STOP=1 \
-        && docker exec "$DEV_DB_CONTAINER" psql -U "$dev_user" -d "$dev_db" -tAc "select count(*) from \"$table\";")
+# Column lists are read from the catalogue rather than hardcoded, so a new column does not
+# silently shift the data one place to the left.
+#
+# `createdByUserId` is REPLACED WITH NULL. Almost every exercise in production was
+# contributed by a real account, and that id is the one piece of member data a catalogue
+# copy would otherwise carry across — nulling it is exactly what the schema itself does
+# when an author goes away (onDelete: SetNull), so nothing downstream is surprised.
+copy_table() {
+    local table="$1"
+    local select_list target_list
+    select_list=$(prod_psql -tAc "
+        SELECT string_agg(
+                   CASE WHEN column_name = 'createdByUserId' THEN 'NULL' ELSE format('%I', column_name) END,
+                   ', ' ORDER BY ordinal_position)
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = '$table';")
+    target_list=$(prod_psql -tAc "
+        SELECT string_agg(format('%I', column_name), ', ' ORDER BY ordinal_position)
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = '$table';")
+    if [ -z "$select_list" ]; then
+        echo "  $table: no such table in production, skipped" >&2
+        return
+    fi
+    prod_psql -tAc "COPY (SELECT $select_list FROM \"$table\") TO STDOUT"         | dev_psql -q -v ON_ERROR_STOP=1 -c "COPY \"$table\" ($target_list) FROM STDIN"
+    local rows
+    rows=$(dev_psql -tAc "SELECT count(*) FROM \"$table\";")
     echo "  $table: $rows rows"
+}
+
+for table in "${TABLES[@]}"; do
+    copy_table "$table"
 done
 
 # Shared templates only — a template with a userId belongs to a real person.

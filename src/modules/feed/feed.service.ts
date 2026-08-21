@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, OnModuleInit } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { RequestUser } from "../../shared/current-user.decorator";
@@ -36,7 +36,7 @@ interface RecordSyncItem {
 }
 
 @Injectable()
-export class FeedService {
+export class FeedService implements OnModuleInit {
     private readonly logger = new Logger(FeedService.name);
     private tablesReady = false;
 
@@ -45,9 +45,30 @@ export class FeedService {
         private readonly push: PushService
     ) {}
 
-    // Idempotent DDL-on-init, the same approach the feedback and reaction tables use:
-    // the deploy pipeline has no migration step, so every table this module needs is
-    // reconciled on first use and never again within the process.
+    /**
+     * Reconcile the tables at BOOT as well as on first use.
+     *
+     * They were previously created only when somebody first touched the feed, which is
+     * fine for an environment that has been running a while and wrong for a fresh one:
+     * a brand-new database has no feed tables at all until a human happens to open the
+     * feed, so anything that writes to them before that — a seeder, a migration check, a
+     * background job — fails against a database that looks migrated.
+     *
+     * Deliberately swallows failures. A database that is unreachable at boot must not stop
+     * the API from starting; `tablesReady` stays false and the existing lazy path retries
+     * on first use exactly as before.
+     */
+    async onModuleInit(): Promise<void> {
+        try {
+            await this.ensureTables();
+        } catch (error) {
+            this.logger.warn(`feed tables not reconciled at boot: ${(error as Error).message}`);
+        }
+    }
+
+    // Idempotent DDL, the same approach the feedback and reaction tables use: the deploy
+    // pipeline has no migration step, so every table this module needs is reconciled once
+    // per process and never again.
     private async ensureTables(): Promise<void> {
         if (this.tablesReady) {
             return;
