@@ -133,6 +133,11 @@ model Exercise {
   mediaReferences       Json                      @default("[]")
   sourceImportedAt      DateTime?
   isCustom              Boolean                   @default(false)
+  // Static holds — planks, hangs, timed carries — are prescribed in seconds, not reps.
+  // This is only the DEFAULT for sets added from this exercise; the measure lives per
+  // set (WorkoutSet.durationSeconds), because the same movement can legitimately be
+  // done either way.
+  isTimed               Boolean                   @default(false)
   status                String                    @default("approved")
   createdByUserId       String?
   createdAt             DateTime                  @default(now())

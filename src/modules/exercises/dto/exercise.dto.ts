@@ -54,6 +54,11 @@ export class CreateExerciseDto {
     @IsOptional()
     @IsBoolean()
     isCustom?: boolean;
+
+    /** Sets from this exercise are measured in seconds (planks, hangs, carries). */
+    @IsOptional()
+    @IsBoolean()
+    isTimed?: boolean;
 }
 
 export class UpdateExerciseDto {
@@ -116,6 +121,11 @@ export class UpdateExerciseDto {
     @IsOptional()
     @IsBoolean()
     isCustom?: boolean;
+
+    /** Sets from this exercise are measured in seconds (planks, hangs, carries). */
+    @IsOptional()
+    @IsBoolean()
+    isTimed?: boolean;
 }
 
 export class ReactExerciseDto {

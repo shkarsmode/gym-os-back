@@ -95,6 +95,13 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
                 'ALTER TABLE "WorkoutSet" ADD COLUMN IF NOT EXISTS "durationSeconds" INTEGER;'
             );
 
+            // Marks an exercise as a static hold, so sets added from it default to
+            // seconds instead of repetitions. NOT NULL with a false default: every
+            // existing exercise is rep-based, which is the honest backfill here.
+            await this.$executeRawUnsafe(
+                'ALTER TABLE "Exercise" ADD COLUMN IF NOT EXISTS "isTimed" BOOLEAN NOT NULL DEFAULT false;'
+            );
+
             // Per-user appearance/settings preferences (theme, accent, compact, workout
             // defaults …) as a JSON blob so they sync across devices. NULL = never saved
             // → client falls back to its local defaults. Idempotent, reconcile every start.

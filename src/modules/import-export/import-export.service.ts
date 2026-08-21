@@ -323,6 +323,7 @@ export class ImportExportService {
                 licenseStatus: item.licenseStatus,
                 mediaReferences: item.mediaReferences,
                 isCustom: item.isCustom,
+                isTimed: item.isTimed,
                 status: item.status,
                 createdByUserId: item.createdByUserId,
                 likeCount: reactionCounts.get(item.id)?.likeCount || 0,
@@ -483,7 +484,14 @@ export class ImportExportService {
     }
 }
 
-function exerciseData(exercise: any, userId: string) {
+/**
+ * A restored custom exercise, normalised.
+ *
+ * Exported so the round-trip can be tested without a database: every field an export
+ * writes has to survive the import that reads it back, and a field silently dropped
+ * here is indistinguishable from one the user never set.
+ */
+export function exerciseData(exercise: any, userId: string) {
     return {
         name: exercise.name,
         aliases: exercise.aliases || [],
@@ -500,6 +508,7 @@ function exerciseData(exercise: any, userId: string) {
         mediaUrl: exercise.mediaUrl || null,
         mediaType: exercise.mediaType || "none",
         isCustom: true,
+        isTimed: Boolean(exercise.isTimed),
         createdByUserId: userId
     };
 }
