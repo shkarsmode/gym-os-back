@@ -910,10 +910,14 @@ async function tickSocial(byId: Map<string, Persona>, now: Date): Promise<{ reac
     }
     // skipDuplicates carries the idempotency: the unique key on (userId, targetType,
     // targetId) means a second reaction from the same person is simply dropped.
-    await prisma.feedReaction.createMany({ data: reactions, skipDuplicates: true });
-    await prisma.feedComment.createMany({ data: comments, skipDuplicates: true });
+    //
+    // Report what LANDED, not what was attempted. Most ticks propose reactions from people
+    // who have already reacted, so the attempted count is roughly constant and says nothing
+    // — a log line that always reads "20 reactions" is worse than no log line.
+    const insertedReactions = await prisma.feedReaction.createMany({ data: reactions, skipDuplicates: true });
+    const insertedComments = await prisma.feedComment.createMany({ data: comments, skipDuplicates: true });
     await prisma.notification.createMany({ data: notifications, skipDuplicates: true });
-    return { reactions: reactions.length, comments: comments.length };
+    return { reactions: insertedReactions.count, comments: insertedComments.count };
 }
 
 // ---------------------------------------------------------------------------------------
