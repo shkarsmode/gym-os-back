@@ -1,6 +1,7 @@
 import {
     buildPersonas, trainsOn, sessionKind, workingWeight, weeksTrained, bodyweightOn,
-    isDeloadWeek, makeRng, hashSeed, roundToPlate, SPLITS, PersonaBankInput
+    isDeloadWeek, makeRng, hashSeed, roundToPlate, SPLITS, PersonaBankInput,
+    dayIndexOf, calendarDate, instantAt, DAY_MS
 } from "./personas";
 import {
     bytesPerWorkout, steadyStateBytes, judgeDisk, judgeMemory, judgeCpu, capacityReport,
@@ -273,5 +274,47 @@ describe("dev-life capacity", () => {
         const calm = capacityReport({ ...HOST, swapUsedMb: 0 }, GROWTH, 9 * MIB, 40 * MIB, 120);
         expect(calm.overall).toBe("ok");
         expect(calm.recommendation).toContain("CX22");
+    });
+});
+
+describe("dev-life calendar", () => {
+    it("stores a workout date as midnight UTC, like every real row", () => {
+        /**
+         * The bug this pins: the date column was derived from the KYIV day start, so a
+         * session on 21 August was written as 2026-08-20T21:00:00Z. It reads as the right
+         * day to a human in Kyiv and as the previous day to `date::date = CURRENT_DATE`,
+         * so the dev environment showed sessions in progress while reporting none today.
+         *
+         * The client sends "2026-08-21" and the backend does `new Date(value)`, which is
+         * midnight UTC — that is the convention, and generated rows have to match it or
+         * every date comparison is a day out.
+         */
+        const dayIndex = dayIndexOf(new Date("2026-08-21T10:00:00Z"));
+        const stored = calendarDate(dayIndex);
+        expect(stored.toISOString()).toBe("2026-08-21T00:00:00.000Z");
+        expect(stored.getTime()).toBe(new Date("2026-08-21").getTime());
+    });
+
+    it("puts the session itself at the right wall-clock time in Kyiv", () => {
+        const dayIndex = dayIndexOf(new Date("2026-08-21T10:00:00Z"));
+        // 18:30 Kyiv is 15:30 UTC.
+        expect(instantAt(dayIndex, 18, 30).toISOString()).toBe("2026-08-21T15:30:00.000Z");
+        // And it still falls on the day it belongs to.
+        expect(dayIndexOf(instantAt(dayIndex, 18, 30))).toBe(dayIndex);
+    });
+
+    it("keeps late-evening sessions on the same Kyiv day", () => {
+        // 22:00 Kyiv is 19:00 UTC — the case that would roll over under a naive
+        // conversion, and the one that decides whether a late session lands on the right
+        // day in the calendar.
+        const dayIndex = dayIndexOf(new Date("2026-08-21T12:00:00Z"));
+        const late = instantAt(dayIndex, 22, 0);
+        expect(dayIndexOf(late)).toBe(dayIndex);
+        expect(calendarDate(dayIndexOf(late)).toISOString()).toBe("2026-08-21T00:00:00.000Z");
+    });
+
+    it("advances exactly one day per index", () => {
+        const dayIndex = dayIndexOf(new Date("2026-08-21T10:00:00Z"));
+        expect(calendarDate(dayIndex + 1).getTime() - calendarDate(dayIndex).getTime()).toBe(DAY_MS);
     });
 });

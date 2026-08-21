@@ -33,7 +33,7 @@ import { PrismaClient, Prisma, WorkoutStatus, WorkoutSetType } from "@prisma/cli
 import {
     buildPersonas, trainsOn, sessionKind, workingWeight, weeksTrained, bodyweightOn,
     isDeloadWeek, makeRng, hashSeed, pick, pickWeighted, clamp, roundToPlate,
-    SESSION_MUSCLES, Persona
+    SESSION_MUSCLES, Persona, DAY_MS, dayIndexOf, calendarDate, instantAt
 } from "./personas";
 import {
     bytesPerWorkout, capacityReport, formatBytes, HostStat, TableStat, GIB, MIB
@@ -43,10 +43,6 @@ import {
     EXPERIENCE_LABELS, COMMENTS_WORKOUT, COMMENTS_RECORD,
     REPLY_PHRASES, WORKOUT_NOTES, SESSION_TITLES, CARDIO_TYPES, FEATURE_REQUEST_IDEAS
 } from "./content";
-
-const DAY_MS = 86_400_000;
-/** Sessions are scheduled in Kyiv hours; the rows themselves are UTC like everything else. */
-const KYIV_OFFSET_MS = 3 * 60 * 60 * 1000;
 
 const DEFAULTS = {
     users: 80,
@@ -96,9 +92,6 @@ function fail(message: string): never {
 // ---------------------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------------------
-
-const dayIndexOf = (when: Date): number => Math.floor((when.getTime() + KYIV_OFFSET_MS) / DAY_MS);
-const dateOfDayIndex = (dayIndex: number): Date => new Date(dayIndex * DAY_MS - KYIV_OFFSET_MS);
 
 function arg(name: string, fallback: number): number {
     const raw = process.argv.find((item) => item.startsWith(`--${name}=`));
@@ -266,11 +259,7 @@ function planWorkout(
     }
 
     const startHour = persona.preferredHour + (rng() < 0.3 ? (rng() < 0.5 ? -1 : 1) : 0);
-    const startAt = new Date(
-        dateOfDayIndex(dayIndex).getTime()
-        + clamp(startHour, 5, 22) * 3_600_000
-        + Math.floor(rng() * 55) * 60_000
-    );
+    const startAt = instantAt(dayIndex, clamp(startHour, 5, 22), Math.floor(rng() * 55));
 
     // PRO members sometimes pair two exercises. Free accounts cannot create a superset, so
     // generating one for them would produce data the app itself would refuse to make.
@@ -318,7 +307,7 @@ function planWorkout(
     return {
         id: `dev-w-${persona.index}-${dayIndex}`,
         userId: persona.id,
-        date: dateOfDayIndex(dayIndex),
+        date: calendarDate(dayIndex),
         title: pick(rng, SESSION_TITLES[kind] ?? SESSION_TITLES.full_body),
         workoutType: kind,
         notes: pick(rng, WORKOUT_NOTES) || null,
@@ -411,7 +400,7 @@ async function populate(): Promise<void> {
             bodyweightRows.push({
                 id: `dev-bw-${persona.index}-${dayIndex}`,
                 userId: persona.id,
-                date: dateOfDayIndex(dayIndex),
+                date: calendarDate(dayIndex),
                 bodyweight: new Prisma.Decimal(bodyweightOn(persona, weeksTrained(persona, dayIndex, todayIndex)))
             });
         }

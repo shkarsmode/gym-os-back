@@ -349,3 +349,35 @@ export function bodyweightOn(persona: Persona, weeks: number): number {
     const rng = makeRng(hashSeed(persona.id, "bw", Math.floor(weeks)));
     return Math.round((persona.startBodyweight + drift + (rng() - 0.5) * 0.9) * 10) / 10;
 }
+
+// ---------------------------------------------------------------------------------------
+// Calendar
+// ---------------------------------------------------------------------------------------
+
+export const DAY_MS = 86_400_000;
+/** Sessions are scheduled in Kyiv hours; rows are stored in UTC like everything else. */
+export const KYIV_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/** Which Kyiv calendar day an instant falls on. */
+export function dayIndexOf(when: Date): number {
+    return Math.floor((when.getTime() + KYIV_OFFSET_MS) / DAY_MS);
+}
+
+/**
+ * The `date` COLUMN, which is a calendar day and not an instant.
+ *
+ * The client sends "2026-08-21" and the backend's parseDateInput turns that into midnight
+ * UTC, so every real row sits at 00:00:00Z. Deriving it from the Kyiv day start instead
+ * put generated rows at 21:00 the PREVIOUS day — the same calendar day to a human reading
+ * Kyiv time, and the day before to every UTC date comparison. `WHERE date::date =
+ * CURRENT_DATE` returned nothing while sessions were visibly in progress, which is exactly
+ * the sort of off-by-one that makes a dev environment quietly lie.
+ */
+export function calendarDate(dayIndex: number): Date {
+    return new Date(dayIndex * DAY_MS);
+}
+
+/** An actual instant during that Kyiv day — when somebody walked into the gym. */
+export function instantAt(dayIndex: number, hour: number, minute: number): Date {
+    return new Date(dayIndex * DAY_MS - KYIV_OFFSET_MS + hour * 3_600_000 + minute * 60_000);
+}
