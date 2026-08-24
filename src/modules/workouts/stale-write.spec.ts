@@ -4,6 +4,17 @@ import { SaveWorkoutDto } from "./dto/workout.dto";
 import { WorkoutsService } from "./workouts.service";
 
 /**
+ * The workout DATE is relative to today on purpose.
+ *
+ * It used to be a hardcoded "2026-08-20". The free tier only allows adding a workout
+ * inside the current week, so the moment that week rolled over the suite began failing —
+ * on a Monday, in code nobody had touched, for a reason that has nothing to do with what
+ * these tests are about. A suite that breaks by the calendar is a suite people learn to
+ * ignore.
+ */
+const TODAY = new Date().toISOString().slice(0, 10);
+
+/**
  * saveFull is a destructive full replace: it deletes every set, exercise and cardio
  * session of a workout and recreates them from the payload. With one account on two
  * devices that makes the last writer win SILENTLY — the phone holding a copy from
@@ -53,7 +64,7 @@ function existingRow(overrides: Record<string, unknown> = {}) {
 
 function saveDto(overrides: Record<string, unknown> = {}): SaveWorkoutDto {
     return {
-        date: "2026-08-20",
+        date: TODAY,
         title: "Груди",
         status: "active",
         workoutType: "custom",
