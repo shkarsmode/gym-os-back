@@ -41,14 +41,18 @@ export class AuthController {
     }
 
     @Get("me")
-    async me(@Req() request: Request) {
+    async me(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
         const user = await this.authService.readUserFromRequest(request);
         // The impersonation banner has to survive a reload, so the session state — not
         // just the user — is part of the answer.
         const payload = await this.authService.readTokenPayload(request);
         const impersonatedBy = payload?.imp || null;
+        // The app asks this on every start: that is where a half-year session slides
+        // forward (once a day at most). `token` is only present when it was renewed.
+        const token = this.authService.renewSession(response, payload, user);
         return {
             user,
+            ...(token ? { token } : {}),
             // `canImpersonate` keeps the owner check server-side: the SPA shows the
             // button off this flag instead of hardcoding owner emails, and a
             // panel-promoted admin simply never sees it.

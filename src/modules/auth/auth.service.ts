@@ -3,6 +3,7 @@ import { JwtService } from "@nestjs/jwt";
 import { Response, Request } from "express";
 import { PrismaService } from "../../prisma/prisma.service";
 import { isAdminUser } from "../../shared/admin";
+import { SESSION_TTL_MS, SessionClaims, shouldRenewSession } from "./session";
 
 // Impersonation sessions expire on their own so a forgotten one cannot linger.
 const IMPERSONATION_TTL = "60m";
@@ -105,20 +106,25 @@ export class AuthService {
         this.attachTokenCookie(response, this.createSessionToken(user));
     }
 
-    attachTokenCookie(response: Response, token: string, maxAgeMs = 14 * 24 * 60 * 60 * 1000) {
-        const isProduction = process.env.NODE_ENV === "production";
+    attachTokenCookie(response: Response, token: string, maxAgeMs = SESSION_TTL_MS) {
+        response.cookie("gymos_session", token, { ...this.sessionCookieAttributes(), maxAge: maxAgeMs });
+    }
 
-        response.cookie("gymos_session", token, {
+    // Shared by set and clear: a cookie set as SameSite=None; Secure is cleared with the
+    // same attributes, so logging out cannot leave a half-year session behind it.
+    private sessionCookieAttributes() {
+        const isProduction = process.env.NODE_ENV === "production";
+        return {
             httpOnly: true,
-            sameSite: isProduction ? "none" : "lax",
+            sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
             secure: isProduction,
-            maxAge: maxAgeMs
-        });
+            path: "/"
+        };
     }
 
     // Raw claims of the presented token — the only way to see the `imp` claim, since
     // readUserFromRequest resolves to the impersonated user and drops it.
-    async readTokenPayload(request: Request): Promise<{ sub: string; imp?: string; impEmail?: string } | null> {
+    async readTokenPayload(request: Request): Promise<(SessionClaims & { impEmail?: string }) | null> {
         const header = request.headers?.authorization || "";
         const bearer = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
         const token = request.cookies?.gymos_session || bearer;
@@ -126,7 +132,7 @@ export class AuthService {
             return null;
         }
         try {
-            return await this.jwtService.verifyAsync<{ sub: string; imp?: string; impEmail?: string }>(token, {
+            return await this.jwtService.verifyAsync<SessionClaims & { impEmail?: string }>(token, {
                 secret: process.env.JWT_SECRET || "development-only-secret"
             });
         } catch (error) {
@@ -134,8 +140,22 @@ export class AuthService {
         }
     }
 
+    /**
+     * A fresh half-year token for the session this request presented, already set as the
+     * cookie — or null when it does not need one yet (see shouldRenewSession). The caller
+     * hands the token to the SPA too, whose Bearer copy is what iOS actually sends.
+     */
+    renewSession(response: Response, claims: SessionClaims | null, user: { id: string; email: string; displayName: string } | null): string | null {
+        if (!user || !shouldRenewSession(claims) || claims?.sub !== user.id) {
+            return null;
+        }
+        const token = this.createSessionToken(user);
+        this.attachTokenCookie(response, token);
+        return token;
+    }
+
     clearSessionCookie(response: Response) {
-        response.clearCookie("gymos_session");
+        response.clearCookie("gymos_session", this.sessionCookieAttributes());
     }
 
     async readUserFromRequest(request: Request) {
