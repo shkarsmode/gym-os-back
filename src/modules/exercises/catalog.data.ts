@@ -1128,7 +1128,9 @@ export interface CatalogMerge {
 export const CATALOG_MERGES: CatalogMerge[] = [
     { from: "barbell-curl", into: "біцепс-зі-штангою", reason: "той самий підйом штанги на біцепс, та сама анімація" },
     { from: "dumbbell-lateral-raise", into: "махи-гантелей-через-сторони", reason: "ті самі махи гантелями в сторони, та сама анімація" },
-    { from: "розгинання-на-трицепс-на-блоці-канат", into: "rope-pushdown", reason: "те саме розгинання на блоці з канатом, та сама анімація" }
+    { from: "розгинання-на-трицепс-на-блоці-канат", into: "rope-pushdown", reason: "те саме розгинання на блоці з канатом, та сама анімація" },
+    // Asked first: the generic crossover fly is done high-to-low anyway (same gif). Owner: «да».
+    { from: "zvedennia-ruk-u-krosoveri-zverkhu-vnyz", into: "зведення-рук-у-кросовері", reason: "кросовер зверху вниз — це і є звичайне зведення в кросовері, та сама анімація" }
 ];
 
 type PatchableField = "name" | "primaryMuscleGroup" | "movementPattern" | "equipment" | "mediaUrl";
