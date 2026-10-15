@@ -1,3 +1,4 @@
+import { jwtSecret } from "./jwt-secret";
 import { Injectable } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { Response, Request } from "express";
@@ -133,7 +134,7 @@ export class AuthService {
         }
         try {
             return await this.jwtService.verifyAsync<SessionClaims & { impEmail?: string }>(token, {
-                secret: process.env.JWT_SECRET || "development-only-secret"
+                secret: jwtSecret()
             });
         } catch (error) {
             return null;
@@ -168,7 +169,7 @@ export class AuthService {
 
         try {
             const payload = await this.jwtService.verifyAsync(token, {
-                secret: process.env.JWT_SECRET || "development-only-secret"
+                secret: jwtSecret()
             });
             return this.prisma.user.findUnique({
                 where: { id: payload.sub },

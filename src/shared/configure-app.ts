@@ -64,11 +64,22 @@ export function configureApp(app: INestApplication) {
         return;
     }
 
+    // CORS only stops a foreign page from READING the answer; the request itself still runs
+    // with the session cookie (SameSite=None in production). So a write from an origin that
+    // is not ours is refused outright — otherwise one visit to a crafted page by an admin
+    // could, say, promote the attacker's account. Requests without an Origin (curl, server
+    // to server) are not a browser riding someone's cookie and pass.
+    if (!isAllowedOrigin && !["GET", "HEAD"].includes(request.method)) {
+        response.status(403).json({ message: "Cross-origin request refused" });
+        return;
+    }
+
     next();
 });
 
+    // JSON only: the SPA never posts forms, and a urlencoded parser is what lets a plain
+    // HTML form on another site reach the API as a "simple" request.
     app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "750kb" }));
-    app.use(express.urlencoded({ extended: true, limit: process.env.JSON_BODY_LIMIT || "750kb" }));
     app.use(cookieParser());
 
     app.useGlobalPipes(new ValidationPipe({

@@ -1,3 +1,4 @@
+import { jwtSecret } from "./jwt-secret";
 import { Injectable } from "@nestjs/common";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
@@ -13,7 +14,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
                 // *.vercel.app subdomains (ITP), so the SPA also sends the token here.
                 ExtractJwt.fromAuthHeaderAsBearerToken()
             ]),
-            secretOrKey: process.env.JWT_SECRET || "development-only-secret"
+            secretOrKey: jwtSecret()
         });
     }
 

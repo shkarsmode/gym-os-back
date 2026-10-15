@@ -1,3 +1,4 @@
+import { jwtSecret } from "./jwt-secret";
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
@@ -11,7 +12,7 @@ import { SESSION_TTL } from "./session";
     imports: [
         PassportModule,
         JwtModule.register({
-            secret: process.env.JWT_SECRET || "development-only-secret",
+            secret: jwtSecret(),
             signOptions: { expiresIn: SESSION_TTL }
         })
     ],

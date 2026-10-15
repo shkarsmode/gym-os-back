@@ -1,0 +1,13 @@
+// The key that signs every session. The old fallback string is in this public repository,
+// so a deployment without JWT_SECRET accepted forged tokens — including one carrying an
+// admin's email. Outside local development it is required.
+export function jwtSecret(): string {
+    const secret = process.env.JWT_SECRET;
+    if (secret) {
+        return secret;
+    }
+    if (process.env.NODE_ENV === "production") {
+        throw new Error("JWT_SECRET is not set — refusing to start with a publicly known signing key");
+    }
+    return "development-only-secret";
+}
