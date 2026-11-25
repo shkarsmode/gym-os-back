@@ -116,9 +116,13 @@ describe("MCP OAuth: metadata", () => {
         expect(service.challenge({ code: "invalid_token", description: "bad" })).toMatch(/^Bearer error="invalid_token", error_description="bad", resource_metadata=/);
     });
 
-    it("stays disabled without an allowlist", () => {
-        const { service } = setup({ MCP_ALLOWED_EMAILS: "" });
-        expect(service.enabled).toBe(false);
+    it("stays off without MCP_PUBLIC_URL and lets only the owner in by default", () => {
+        expect(loadMcpConfig({} as NodeJS.ProcessEnv).enabled).toBe(false);
+        const defaults = loadMcpConfig({ MCP_PUBLIC_URL: ISSUER } as NodeJS.ProcessEnv);
+        expect(defaults.enabled).toBe(true);
+        expect(defaults.allowedEmails).toEqual(["zshkarrr@gmail.com"]);
+        expect(loadMcpConfig({ MCP_PUBLIC_URL: ISSUER, MCP_ALLOWED_EMAILS: "" } as NodeJS.ProcessEnv).allowedEmails).toEqual(["zshkarrr@gmail.com"]);
+        expect(loadMcpConfig({ MCP_PUBLIC_URL: ISSUER, MCP_ALLOWED_EMAILS: "Me@Example.com" } as NodeJS.ProcessEnv).allowedEmails).toEqual(["me@example.com"]);
     });
 });
 

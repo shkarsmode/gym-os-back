@@ -25,6 +25,7 @@ const DEFAULT_REDIRECT_URIS = [
     "https://claude.com/api/mcp/auth_callback"
 ];
 const DEFAULT_ORIGINS = ["https://claude.ai", "https://claude.com"];
+const DEFAULT_ALLOWED_EMAILS = ["zshkarrr@gmail.com"];
 const DEFAULT_TIME_ZONE = "Europe/Kyiv";
 
 function list(value: string | undefined): string[] {
@@ -67,7 +68,8 @@ function isValidIssuer(issuer: string): boolean {
 
 export function loadMcpConfig(env: NodeJS.ProcessEnv = process.env): McpConfig {
     const issuer = String(env.MCP_PUBLIC_URL || "").trim().replace(/\/+$/, "");
-    const allowedEmails = list(env.MCP_ALLOWED_EMAILS).map((email) => email.toLowerCase());
+    const emails = list(env.MCP_ALLOWED_EMAILS);
+    const allowedEmails = (emails.length ? emails : DEFAULT_ALLOWED_EMAILS).map((email) => email.toLowerCase());
     const allowedUserIds = list(env.MCP_ALLOWED_USER_IDS);
     const redirectUris = list(env.MCP_REDIRECT_URIS);
     const origins = list(env.MCP_ALLOWED_ORIGINS);
