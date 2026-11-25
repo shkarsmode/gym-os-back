@@ -66,8 +66,23 @@ function isValidIssuer(issuer: string): boolean {
     }
 }
 
+// The API's public origin. GOOGLE_CALLBACK_URL already has to point at it, or Google
+// sign-in would not work, so it is the fallback when MCP_PUBLIC_URL is not set.
+function publicUrl(env: NodeJS.ProcessEnv): string {
+    const explicit = String(env.MCP_PUBLIC_URL || "").trim();
+    if (explicit) {
+        return explicit.replace(/\/+$/, "");
+    }
+    try {
+        return new URL(String(env.GOOGLE_CALLBACK_URL || "")).origin;
+    } catch {
+        return "";
+    }
+}
+
 export function loadMcpConfig(env: NodeJS.ProcessEnv = process.env): McpConfig {
-    const issuer = String(env.MCP_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+    const issuer = publicUrl(env);
+    const switchedOff = String(env.MCP_ENABLED || "").trim().toLowerCase() === "false";
     const emails = list(env.MCP_ALLOWED_EMAILS);
     const allowedEmails = (emails.length ? emails : DEFAULT_ALLOWED_EMAILS).map((email) => email.toLowerCase());
     const allowedUserIds = list(env.MCP_ALLOWED_USER_IDS);
@@ -75,7 +90,7 @@ export function loadMcpConfig(env: NodeJS.ProcessEnv = process.env): McpConfig {
     const origins = list(env.MCP_ALLOWED_ORIGINS);
     const validIssuer = isValidIssuer(issuer);
     return {
-        enabled: validIssuer && (allowedEmails.length > 0 || allowedUserIds.length > 0),
+        enabled: !switchedOff && validIssuer && (allowedEmails.length > 0 || allowedUserIds.length > 0),
         issuer,
         resource: `${issuer}/mcp`,
         allowedEmails,

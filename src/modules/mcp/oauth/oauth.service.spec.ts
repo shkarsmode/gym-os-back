@@ -124,6 +124,14 @@ describe("MCP OAuth: metadata", () => {
         expect(loadMcpConfig({ MCP_PUBLIC_URL: ISSUER, MCP_ALLOWED_EMAILS: "" } as NodeJS.ProcessEnv).allowedEmails).toEqual(["zshkarrr@gmail.com"]);
         expect(loadMcpConfig({ MCP_PUBLIC_URL: ISSUER, MCP_ALLOWED_EMAILS: "Me@Example.com" } as NodeJS.ProcessEnv).allowedEmails).toEqual(["me@example.com"]);
     });
+
+    it("takes the public URL from the Google callback when MCP_PUBLIC_URL is not set", () => {
+        const derived = loadMcpConfig({ GOOGLE_CALLBACK_URL: "https://api.example.com/auth/google/callback" } as NodeJS.ProcessEnv);
+        expect(derived).toMatchObject({ enabled: true, issuer: "https://api.example.com", resource: "https://api.example.com/mcp" });
+        expect(loadMcpConfig({ MCP_PUBLIC_URL: ISSUER, GOOGLE_CALLBACK_URL: "https://api.example.com/auth/google/callback" } as NodeJS.ProcessEnv).issuer).toBe(ISSUER);
+        expect(loadMcpConfig({ GOOGLE_CALLBACK_URL: "http://api.example.com/auth/google/callback" } as NodeJS.ProcessEnv).enabled).toBe(false);
+        expect(loadMcpConfig({ GOOGLE_CALLBACK_URL: "https://api.example.com/auth/google/callback", MCP_ENABLED: "false" } as NodeJS.ProcessEnv).enabled).toBe(false);
+    });
 });
 
 describe("MCP OAuth: dynamic client registration", () => {

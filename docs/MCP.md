@@ -12,7 +12,8 @@
 
 | Переменная | Обязательна | Значение |
 |---|---|---|
-| `MCP_PUBLIC_URL` | да | Публичный origin API без пути: `https://gymos-api.91.98.164.192.nip.io`. Из него строятся issuer и resource `.../mcp`. |
+| `MCP_PUBLIC_URL` | нет | Публичный origin API без пути, из него строятся issuer и resource `.../mcp`. Если не задан, берётся origin `GOOGLE_CALLBACK_URL` (на проде `https://gymos-api.91.98.164.192.nip.io`). |
+| `MCP_ENABLED` | нет | `false` выключает MCP целиком. |
 | `MCP_ALLOWED_EMAILS` | нет | Email-адреса аккаунтов GymOS через запятую. Если не задан или пуст, пускается только `zshkarrr@gmail.com`. |
 | `MCP_ALLOWED_USER_IDS` | нет | Дополнительно id пользователей GymOS через запятую. |
 | `MCP_TIMEZONE` | нет | Часовой пояс для «сегодня», по умолчанию `Europe/Kyiv`. |
@@ -23,13 +24,13 @@
 | `MCP_CLIENT_ID`, `MCP_CLIENT_SECRET` | нет | Фиксированный конфиденциальный клиент для режима без DCR. |
 | `MCP_ACCESS_TTL_MIN`, `MCP_REFRESH_TTL_DAYS` | нет | Время жизни токенов, по умолчанию 60 и 30. |
 
-Если `MCP_PUBLIC_URL` не задан, MCP выключен и все его пути отдают 404.
+MCP включён, если публичный адрес API известен и это https (или localhost). При `MCP_ENABLED=false` все MCP-пути отдают 404.
 
 Google OAuth используется существующий: тот же клиент и тот же `/auth/google/callback`, в Google Console ничего добавлять не нужно.
 
 ## Деплой
 
-1. В платформе деплоя добавьте `MCP_PUBLIC_URL=https://gymos-api.91.98.164.192.nip.io`. Allowlist по умолчанию уже `zshkarrr@gmail.com`; `MCP_ALLOWED_EMAILS` нужен, только чтобы пустить другой адрес.
+1. Переменные не нужны: адрес берётся из `GOOGLE_CALLBACK_URL`, allowlist по умолчанию `zshkarrr@gmail.com`. `MCP_PUBLIC_URL` и `MCP_ALLOWED_EMAILS` задаются, только чтобы их переопределить.
 2. Влейте изменения в `main`: авто-деплой соберёт и перезапустит API. Миграции не нужны, таблицы `McpClient`, `McpAuthRequest`, `McpToken` и `McpAuditLog` создаются при старте, как остальные таблицы проекта.
 3. Проверка без токена:
 
@@ -78,7 +79,7 @@ curl.exe https://gymos-api.91.98.164.192.nip.io/.well-known/oauth-protected-reso
      ```
 
    - на сервере, без входа: `npm run mcp:revoke-all`.
-3. Мгновенно закрыть доступ: уберите `MCP_PUBLIC_URL` и перезапустите API, MCP выключится целиком. Allowlist проверяется на каждом запросе, поэтому замена `MCP_ALLOWED_EMAILS` на другой адрес тоже действует сразу после перезапуска.
+3. Мгновенно закрыть доступ: задайте `MCP_ENABLED=false` и перезапустите API, MCP выключится целиком. Allowlist проверяется на каждом запросе, поэтому замена `MCP_ALLOWED_EMAILS` на другой адрес тоже действует сразу после перезапуска.
 
 ## Журнал изменений
 
