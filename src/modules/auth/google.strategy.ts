@@ -23,6 +23,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, "google") {
         done(null, {
             googleId: profile.id,
             email,
+            emailVerified: profile.emails?.[0]?.verified ?? (profile as any)._json?.email_verified,
             displayName: profile.displayName || email,
             avatarUrl: profile.photos?.[0]?.value || null,
             accessToken,

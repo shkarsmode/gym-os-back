@@ -7,9 +7,11 @@ import { AuthService } from "./auth.service";
 import { GoogleStrategy } from "./google.strategy";
 import { JwtStrategy } from "./jwt.strategy";
 import { SESSION_TTL } from "./session";
+import { McpOAuthModule } from "../mcp/oauth/mcp-oauth.module";
 
 @Module({
     imports: [
+        McpOAuthModule,
         PassportModule,
         JwtModule.register({
             secret: jwtSecret(),

@@ -4,6 +4,7 @@ import { WorkoutTemplatesService } from "./workout-templates.service";
 
 @Module({
     controllers: [WorkoutTemplatesController],
-    providers: [WorkoutTemplatesService]
+    providers: [WorkoutTemplatesService],
+    exports: [WorkoutTemplatesService]
 })
 export class WorkoutTemplatesModule {}

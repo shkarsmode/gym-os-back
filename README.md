@@ -234,6 +234,10 @@ GYMOS_AUTO_DB_PUSH="true"
 
 Після цього зроби redeploy. Якщо Vercel продовжить брати старий cache, запусти redeploy з очищенням build cache.
 
+## MCP для Claude
+
+Удалённий MCP-сервер для кастомного конектора claude.ai: `POST /mcp`, OAuth 2.1 через Google, доступ лише для allowlist. Змінні оточення, деплой, підключення і відкликання доступу: [docs/MCP.md](docs/MCP.md).
+
 ## Quality commands
 
 ```powershell

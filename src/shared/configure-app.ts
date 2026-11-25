@@ -1,6 +1,8 @@
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import cookieParser from "cookie-parser";
 import express, { NextFunction, Request, Response } from "express";
+import { isMcpPath } from "../modules/mcp/mcp.config";
+import { mcpHttpMiddleware } from "../modules/mcp/mcp.http";
 
 function normalizeOrigin(origin: string) {
     return origin.trim().replace(/\/+$/, "");
@@ -36,7 +38,14 @@ function buildAllowedOrigins() {
 export function configureApp(app: INestApplication) {
     const allowedOrigins = buildAllowedOrigins();
 
+    // MCP paths never authenticate with the session cookie, so they get their own CORS.
+    app.use(mcpHttpMiddleware());
+
     app.use((request: Request, response: Response, next: NextFunction) => {
+    if (isMcpPath(request.path)) {
+        next();
+        return;
+    }
     const origin = request.headers.origin;
     const normalizedOrigin = typeof origin === "string" ? normalizeOrigin(origin) : "";
     const isAllowedOrigin = !origin || allowedOrigins.includes(normalizedOrigin);

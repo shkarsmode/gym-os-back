@@ -4,6 +4,7 @@ import { BodyweightService } from "./bodyweight.service";
 
 @Module({
     controllers: [BodyweightController],
-    providers: [BodyweightService]
+    providers: [BodyweightService],
+    exports: [BodyweightService]
 })
 export class BodyweightModule {}

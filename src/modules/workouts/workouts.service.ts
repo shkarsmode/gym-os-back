@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { LiveBus } from "../live/live.bus";
 import { PartnerService } from "../live/partner.service";
-import { WorkoutSetType, WorkoutStatus } from "@prisma/client";
+import { Prisma, WorkoutSetType, WorkoutStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { assertSupersetTier, canCreateSupersets } from "../../shared/superset-access";
 import { parseDateInput } from "../../shared/parse-date";
@@ -244,7 +244,7 @@ export class WorkoutsService {
     // Atomic full upsert of a single workout (scalars + nested exercises/sets/cardio).
     // Replaces the fragile "wipe-everything-then-reimport" save: a failure here rolls
     // back the whole transaction, so a single workout can never be left half-deleted.
-    async saveFull(userId: string, id: string, dto: SaveWorkoutDto, isAdmin = false, tier: QuotaTier = "free") {
+    async saveFull(userId: string, id: string, dto: SaveWorkoutDto, isAdmin = false, tier: QuotaTier = "free", options: { strictBase?: boolean } = {}) {
         const existing = await this.prisma.workout.findUnique({
             where: { id },
             select: {
@@ -278,6 +278,20 @@ export class WorkoutsService {
                     code: "STALE_WORKOUT",
                     message: "This workout changed elsewhere since you loaded it. Re-read it and reapply the edit.",
                     currentUpdatedAt: existing.updatedAt.toISOString()
+                });
+            }
+        }
+
+        // Opt-in exact check for callers that hold a millisecond version (the MCP server):
+        // a mismatch, or a row that vanished, is a conflict rather than a silent overwrite
+        // or a resurrection. The conditional update queued first below closes the window
+        // between this read and the commit.
+        if (options.strictBase && dto.baseUpdatedAt) {
+            if (!existing || new Date(dto.baseUpdatedAt).getTime() !== existing.updatedAt.getTime()) {
+                throw new ConflictException({
+                    code: "STALE_WORKOUT",
+                    message: "This workout changed elsewhere since you loaded it. Re-read it and reapply the edit.",
+                    currentUpdatedAt: existing?.updatedAt.toISOString() ?? null
                 });
             }
         }
@@ -498,7 +512,26 @@ export class WorkoutsService {
             }));
         }
 
-        const results = await this.prisma.$transaction(operations);
+        if (options.strictBase && existing && dto.baseUpdatedAt) {
+            operations.unshift(this.prisma.workout.update({
+                where: { id, updatedAt: existing.updatedAt },
+                data: { updatedAt: new Date() }
+            }));
+        }
+
+        let results: unknown[];
+        try {
+            results = await this.prisma.$transaction(operations);
+        } catch (error) {
+            if (options.strictBase && error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+                throw new ConflictException({
+                    code: "STALE_WORKOUT",
+                    message: "This workout changed elsewhere since you loaded it. Re-read it and reapply the edit.",
+                    currentUpdatedAt: null
+                });
+            }
+            throw error;
+        }
         // Still a lightweight ack rather than a deep re-read — but it now carries the
         // row's new version, which the client must hold to send as `baseUpdatedAt` on
         // the next save. Without it the very first save would make every subsequent one
@@ -570,9 +603,28 @@ export class WorkoutsService {
         });
     }
 
-    async remove(userId: string, id: string, isAdmin = false) {
+    async remove(userId: string, id: string, isAdmin = false, guard?: { status?: WorkoutStatus; updatedAt?: Date }) {
         const owner = await this.assertOwner(userId, id, isAdmin);
-        await this.prisma.workout.delete({ where: { id } });
+        if (guard) {
+            // Deletes only the row the caller actually looked at: still in that status and
+            // at that version. Anything else is a conflict, never a lost live session.
+            const deleted = await this.prisma.workout.deleteMany({
+                where: {
+                    id,
+                    userId: owner.userId,
+                    ...(guard.status ? { status: guard.status } : {}),
+                    ...(guard.updatedAt ? { updatedAt: guard.updatedAt } : {})
+                }
+            });
+            if (deleted.count !== 1) {
+                throw new ConflictException({
+                    code: "STALE_WORKOUT",
+                    message: "This workout changed elsewhere since you loaded it. Re-read it before deleting."
+                });
+            }
+        } else {
+            await this.prisma.workout.delete({ where: { id } });
+        }
         this.announce(owner?.userId || userId, "workout.deleted", [id], null, { presence: true, peers: true, feed: true });
         return { ok: true };
     }

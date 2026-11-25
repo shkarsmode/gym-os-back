@@ -561,3 +561,73 @@ model TrainingPartnership {
   @@index([hostId, status])
   @@index([guestId, status])
 }
+
+model McpClient {
+  id           String    @id
+  secretHash   String?
+  name         String
+  redirectUris Json
+  authMethod   String
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+}
+
+model McpAuthRequest {
+  id            String    @id
+  clientId      String
+  redirectUri   String
+  codeChallenge String
+  scope         String
+  resource      String
+  state         String?
+  bindingHash   String
+  csrfHash      String?
+  userId        String?
+  email         String?
+  grantedScope  String?
+  codeHash      String?   @unique
+  codeExpiresAt DateTime?
+  consumedAt    DateTime?
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
+
+  @@index([expiresAt])
+}
+
+model McpToken {
+  id         String    @id
+  kind       String
+  tokenHash  String    @unique
+  clientId   String
+  userId     String
+  email      String
+  scope      String
+  resource   String
+  familyId   String
+  requestId  String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  rotatedAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([requestId])
+}
+
+model McpAuditLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  userId    String
+  clientId  String?
+  tool      String
+  target    String?
+  result    String
+  summary   String?
+  error     String?
+  before    Json?
+  after     Json?
+
+  @@index([userId, createdAt])
+}

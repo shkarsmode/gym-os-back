@@ -20,6 +20,7 @@ import { FeedModule } from "./modules/feed/feed.module";
 import { LiveModule } from "./modules/live/live.module";
 import { AccessModule } from "./modules/access/access.module";
 import { AiModule } from "./modules/ai/ai.module";
+import { McpModule } from "./modules/mcp/mcp.module";
 
 @Module({
     imports: [
@@ -40,7 +41,8 @@ import { AiModule } from "./modules/ai/ai.module";
         FeedbackModule,
         AiModule,
         FeedModule,
-        AccessModule
+        AccessModule,
+        McpModule
     ],
     controllers: [HealthController],
     providers: [{ provide: APP_GUARD, useClass: ThrottleGuard }]

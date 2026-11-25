@@ -1,6 +1,6 @@
-import { BadRequestException, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Req, Res, UseGuards } from "@nestjs/common";
-import { AuthGuard } from "@nestjs/passport";
+import { BadRequestException, Controller, ForbiddenException, Get, NotFoundException, Optional, Param, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { Request, Response } from "express";
+import { GoogleCallbackGuard, McpGoogleCallback } from "../mcp/oauth/google";
 import { PrismaService } from "../../prisma/prisma.service";
 import { isSuperAdminUser } from "../../shared/admin";
 import { CurrentUser, RequestUser } from "../../shared/current-user.decorator";
@@ -12,7 +12,8 @@ import { GoogleAuthGuard } from "./google-auth.guard";
 export class AuthController {
     constructor(
         private readonly authService: AuthService,
-        private readonly prisma: PrismaService
+        private readonly prisma: PrismaService,
+        @Optional() private readonly mcpCallback?: McpGoogleCallback
     ) {}
 
     @Get("google")
@@ -22,8 +23,11 @@ export class AuthController {
     }
 
     @Get("google/callback")
-    @UseGuards(AuthGuard("google"))
+    @UseGuards(GoogleCallbackGuard)
     async googleCallback(@Req() request: Request, @Res() response: Response) {
+        if (this.mcpCallback?.owns(request.query.state)) {
+            return this.mcpCallback.handle(request, response);
+        }
         const user = await this.authService.upsertGoogleUser(request.user as any);
         this.authService.attachSessionCookie(response, user);
         // Also hand the token to the SPA in the URL fragment so iOS Safari (which

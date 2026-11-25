@@ -2,6 +2,7 @@ import { NestFactory } from "@nestjs/core";
 import { ExpressAdapter } from "@nestjs/platform-express";
 import express from "express";
 import { AppModule } from "./app.module";
+import { isMcpPath } from "./modules/mcp/mcp.config";
 import { configureApp } from "./shared/configure-app";
 
 let cachedServer: express.Express | null = null;
@@ -73,9 +74,16 @@ async function bootstrapServer() {
 }
 
 export default async function handler(request: express.Request, response: express.Response) {
-    const isAllowedOrigin = applyCorsHeaders(request, response);
+    const path = String(request.url || "").split("?")[0];
 
-    console.log(`${request.method} ${request.url}`);
+    console.log(`${request.method} ${path}`);
+
+    if (isMcpPath(path)) {
+        const server = await bootstrapServer();
+        return server(request, response);
+    }
+
+    const isAllowedOrigin = applyCorsHeaders(request, response);
 
     if (request.method === "OPTIONS") {
         response.status(isAllowedOrigin ? 204 : 403).send();
